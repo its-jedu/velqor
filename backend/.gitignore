@@ -1,0 +1,6 @@
+.neon
+node_modules/
+.venv_installed
+venv
+.env
+env
