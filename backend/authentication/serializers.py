@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User
+from .models import User, Role
 from .permissions import RoleChoices
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -17,6 +17,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        role_obj, _ = Role.objects.get_or_create(name=RoleChoices.PLAYER)
         user = User.objects.create_user(
             email=validated_data['email'],
             username=validated_data.get('username'),
@@ -24,7 +25,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', ''),
             phone_number=validated_data.get('phone_number', ''),
             password=validated_data['password'],
-            role=RoleChoices.PLAYER
+            role=role_obj
         )
         return user
 
