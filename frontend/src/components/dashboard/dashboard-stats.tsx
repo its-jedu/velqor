@@ -1,72 +1,104 @@
 "use client"
 
+import { Award, Target, TrendingUp, Wallet } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Trophy, Wallet, Users, Target, TrendingUp, Award } from "lucide-react"
+import { formatNaira } from "@/lib/format"
+import type { DashboardStatsData } from "@/lib/mock-data"
+import { Skeleton } from "./skeleton"
 
-interface DashboardStatsProps {
-  stats: {
-    totalMatches: number
-    wins: number
-    losses: number
-    draws: number
-    totalWinnings: number
-    tournamentsPlayed: number
-    tournamentsWon: number
-  }
+interface Props {
+  stats: DashboardStatsData | null
+  loading?: boolean
 }
 
-export function DashboardStats({ stats }: DashboardStatsProps) {
-  const winRate = stats.totalMatches > 0 
-    ? Math.round((stats.wins / stats.totalMatches) * 100) 
-    : 0
+const ZERO: DashboardStatsData = {
+  totalMatches: 0,
+  wins: 0,
+  losses: 0,
+  draws: 0,
+  totalWinnings: 0,
+  tournamentsPlayed: 0,
+  tournamentsWon: 0,
+}
 
-  const statsCards = [
+export function DashboardStats({ stats, loading }: Props) {
+  if (loading) {
+    return (
+      <section>
+        <h2 className="mb-3 text-lg font-semibold">Your stats</h2>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="border-primary/20">
+              <CardContent className="space-y-3">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-3 w-28" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  const s = stats ?? ZERO
+  const winRate = s.totalMatches > 0 ? Math.round((s.wins / s.totalMatches) * 100) : 0
+
+  const cards = [
     {
       title: "Total Matches",
-      value: stats.totalMatches,
-      subValue: `Wins: ${stats.wins} | Losses: ${stats.losses}`,
+      value: s.totalMatches,
+      sub: `${s.wins}W · ${s.losses}L · ${s.draws}D`,
       icon: Target,
       color: "from-blue-500 to-cyan-500",
     },
     {
       title: "Win Rate",
       value: `${winRate}%`,
-      subValue: `${stats.draws} draws`,
+      sub: s.totalMatches > 0 ? `${s.wins} of ${s.totalMatches} matches` : "No matches yet",
       icon: TrendingUp,
       color: "from-green-500 to-emerald-500",
     },
     {
       title: "Total Winnings",
-      value: `₦${stats.totalWinnings.toLocaleString()}`,
-      subValue: `${stats.tournamentsPlayed} tournaments played`,
+      value: formatNaira(s.totalWinnings),
+      sub: `${s.tournamentsPlayed} tournaments played`,
       icon: Wallet,
       color: "from-yellow-500 to-orange-500",
     },
     {
       title: "Tournaments Won",
-      value: stats.tournamentsWon,
-      subValue: `Out of ${stats.tournamentsPlayed}`,
+      value: s.tournamentsWon,
+      sub: `Out of ${s.tournamentsPlayed}`,
       icon: Award,
       color: "from-purple-500 to-pink-500",
     },
   ]
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      {statsCards.map((card, index) => (
-        <Card key={index} className="border-primary/20 bg-gradient-to-br from-card/50 to-card backdrop-blur-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
-            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${card.color} p-1.5`}>
-              <card.icon className="w-full h-full text-white" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{card.value}</div>
-            <p className="text-xs text-muted-foreground mt-1">{card.subValue}</p>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+    <section>
+      <h2 className="mb-3 text-lg font-semibold">Your stats</h2>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {cards.map((card) => (
+          <Card
+            key={card.title}
+            className="border-primary/20 bg-gradient-to-br from-card/50 to-card backdrop-blur-sm"
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+              <CardTitle className="text-xs font-medium text-foreground/70 sm:text-sm">
+                {card.title}
+              </CardTitle>
+              <div className={`h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br ${card.color} p-1.5`}>
+                <card.icon className="h-full w-full text-white" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold sm:text-2xl">{card.value}</div>
+              <p className="mt-1 text-xs text-muted-foreground">{card.sub}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
   )
 }
