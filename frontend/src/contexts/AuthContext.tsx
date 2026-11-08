@@ -6,7 +6,7 @@ import { api, User } from '@/lib/api'
 interface AuthContextType {
   user: User | null
   isLoading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (identifier: string, password: string, type: "username" | "email") => Promise<void>
   register: (data: any) => Promise<void>
   logout: () => Promise<void>
   updateUser: (user: User) => void
@@ -38,12 +38,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const login = async (identifier: string, password: string, type: "username" | "email") => {
+  const login = async (
+    identifier: string,
+    password: string,
+    type: "username" | "email"
+  ) => {
     const response = await api.login(identifier, password, type)
     if (response.success) {
-        setUser(response.data.user)
+      setUser(response.data.user)
     } else {
-        throw new Error(response.message)
+      throw new Error(response.message)
     }
   }
 

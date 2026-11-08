@@ -4,6 +4,7 @@ import { useState } from "react"
 import { motion } from "framer-motion"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,7 +17,6 @@ export default function LoginForm() {
   const { login } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
   const [loginMethod, setLoginMethod] = useState<"username" | "email">("username")
   const [formData, setFormData] = useState({
     username: "",
@@ -27,15 +27,16 @@ export default function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setError("")
-    
+
     try {
-      // Use username or email based on selection
       const loginValue = loginMethod === "username" ? formData.username : formData.email
       await login(loginValue, formData.password, loginMethod)
+      toast.success("Welcome back!", { description: "You're now logged in." })
       router.push("/dashboard")
-    } catch (err: any) {
-      setError(err.message || "Login failed. Please check your credentials.")
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Please check your credentials and try again."
+      toast.error("Login failed", { description: message })
     } finally {
       setIsLoading(false)
     }
@@ -48,7 +49,7 @@ export default function LoginForm() {
       transition={{ duration: 0.5 }}
       className="w-full max-w-md"
     >
-      <Card className="border-primary/20 bg-gradient-to-br from-card/50 to-card backdrop-blur-sm">
+      <Card className="border-primary/20 bg-linear-to-br from-card/50 to-card backdrop-blur-sm">
         <CardHeader className="space-y-1 text-center">
           <motion.div
             initial={{ scale: 0 }}
@@ -56,27 +57,21 @@ export default function LoginForm() {
             transition={{ duration: 0.5, delay: 0.2 }}
           >
             <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-r from-primary to-purple-600 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-full bg-linear-to-r from-primary to-purple-600 flex items-center justify-center">
                 <LogIn className="w-8 h-8 text-white" />
               </div>
             </div>
           </motion.div>
-          <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+          <CardTitle className="text-3xl font-bold bg-linear-to-r from-primary to-purple-600 bg-clip-text text-transparent">
             Welcome Back
           </CardTitle>
           <CardDescription>
             Sign in to your Velqor account to continue competing
           </CardDescription>
         </CardHeader>
-        
+
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-2 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
-            
             {/* Login Method Toggle */}
             <div className="flex gap-2 p-1 bg-primary/10 rounded-lg">
               <button
@@ -84,7 +79,7 @@ export default function LoginForm() {
                 onClick={() => setLoginMethod("username")}
                 className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                   loginMethod === "username"
-                    ? "bg-gradient-to-r from-primary to-purple-600 text-white shadow-lg"
+                    ? "bg-linear-to-r from-primary to-purple-600 text-white shadow-lg"
                     : "text-foreground/60 hover:text-foreground"
                 }`}
               >
@@ -96,7 +91,7 @@ export default function LoginForm() {
                 onClick={() => setLoginMethod("email")}
                 className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                   loginMethod === "email"
-                    ? "bg-gradient-to-r from-primary to-purple-600 text-white shadow-lg"
+                    ? "bg-linear-to-r from-primary to-purple-600 text-white shadow-lg"
                     : "text-foreground/60 hover:text-foreground"
                 }`}
               >
@@ -104,7 +99,7 @@ export default function LoginForm() {
                 Email
               </button>
             </div>
-            
+
             {loginMethod === "username" ? (
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
@@ -132,7 +127,7 @@ export default function LoginForm() {
                 />
               </div>
             )}
-            
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
@@ -154,7 +149,7 @@ export default function LoginForm() {
                 </button>
               </div>
             </div>
-            
+
             <div className="flex items-center justify-between">
               <label className="flex items-center space-x-2">
                 <input type="checkbox" className="rounded border-primary/20 text-primary focus:ring-primary" />
@@ -165,11 +160,11 @@ export default function LoginForm() {
               </Link>
             </div>
           </CardContent>
-          
+
           <CardFooter className="flex flex-col space-y-4">
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+              className="w-full bg-linear-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
               disabled={isLoading}
             >
               {isLoading ? (
@@ -181,9 +176,9 @@ export default function LoginForm() {
                 "Sign In"
               )}
             </Button>
-            
+
             <p className="text-center text-sm text-foreground/60">
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <Link href="/register" className="text-primary hover:underline font-semibold">
                 Create an account
               </Link>
