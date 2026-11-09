@@ -30,9 +30,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 class UserSerializer(serializers.ModelSerializer):
+    role = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = ['id', 'email', 'username', 'first_name', 'last_name', 'phone_number', 'role', 'is_email_verified', 'date_joined', 'last_login']
+
+    def get_role(self, obj):
+        return obj.role.name if obj.role else None
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
