@@ -19,6 +19,8 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        # Ensure role is preloaded for serializer
+        user = User.objects.select_related('role').get(pk=user.pk)
         refresh = RefreshToken.for_user(user)
         return Response({
             'user': UserSerializer(user).data,
@@ -38,16 +40,18 @@ class LoginView(APIView):
         password = serializer.validated_data['password']
         # Lookup user by username, then authenticate using email as USERNAME_FIELD
         try:
-            user_obj = User.objects.get(username=username)
+            user_obj = User.objects.select_related('role').get(username=username)
         except User.DoesNotExist:
             return Response({'message': 'User not found'}, status=status.HTTP_401_UNAUTHORIZED)
         user = authenticate(request, username=user_obj.email, password=password)
         if user is None or not user.is_active:
             return Response({'message': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        # Re-fetch user with role preloaded to avoid extra query in serializer
+        user = User.objects.select_related('role').get(pk=user.pk)
         # Serialize before updating last_login so response shows previous login
         user_data = UserSerializer(user).data
-        user.last_login = timezone.now()
-        user.save(update_fields=['last_login'])
+        # Update last_login with a single UPDATE query to avoid model save overhead
+        User.objects.filter(pk=user.pk).update(last_login=timezone.now())
         refresh = RefreshToken.for_user(user)
         return Response({
             'user': user_data,
@@ -61,7 +65,8 @@ class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
+        user = User.objects.select_related('role').get(pk=request.user.pk)
+        serializer = UserSerializer(user)
         return Response(serializer.data)
 
 class LogoutView(APIView):
