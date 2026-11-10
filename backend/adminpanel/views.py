@@ -10,16 +10,53 @@ from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
+from django.db.models import Count
+from django.db.models.functions import TruncDate
+from datetime import timedelta
+from django.utils import timezone
 import resend
 
 class AdminDashboardView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
+        total_users = User.objects.count()
+        active_users = User.objects.filter(is_active=True).count()
+        verified_users = User.objects.filter(is_email_verified=True).count()
+
+        start_date = timezone.now() - timedelta(days=30)
+        daily_registrations = (
+            User.objects.filter(date_joined__gte=start_date)
+            .annotate(day=TruncDate('date_joined'))
+            .values('day')
+            .annotate(count=Count('id'))
+            .order_by('day')
+        )
+        daily_data = [
+            {'date': item['day'].isoformat(), 'count': item['count']}
+            for item in daily_registrations
+        ]
+
+        recent_users = User.objects.select_related('role').order_by('-date_joined')[:5]
+        recent_users_data = UserAdminSerializer(recent_users, many=True).data
+
+        # Ensure request user role is loaded to avoid extra query
+        user_role_name = request.user.role.name if getattr(request.user, 'role', None) else None
+
         return Response({
-            'message': 'Welcome to Admin Panel',
-            'user': request.user.email,
-            'role': request.user.role
+            'stats': {
+                'total_users': total_users,
+                'active_users': active_users,
+                'verified_users': verified_users,
+            },
+            'charts': {
+                'registrations_last_30_days': daily_data,
+            },
+            'recent_users': recent_users_data,
+            'requested_by': {
+                'email': request.user.email,
+                'role': user_role_name,
+            }
         })
 
 class ModeratorDashboardView(APIView):
