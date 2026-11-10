@@ -9,8 +9,17 @@ class UserAdminSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id','email','username','first_name','last_name','phone_number','role','is_active','is_staff','is_superuser','is_email_verified','password','password_confirm']
+        fields = ['id','email','username','first_name','last_name','phone_number','role','is_active','is_staff','is_superuser','is_email_verified','date_joined','last_login','password','password_confirm']
         extra_kwargs = {'password': {'write_only': True}}
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        # Return role name instead of UUID in responses
+        if instance.role_id:
+            ret['role'] = instance.role.name if instance.role else None
+        else:
+            ret['role'] = None
+        return ret
 
     def validate(self, attrs):
         pw = attrs.get('password')
