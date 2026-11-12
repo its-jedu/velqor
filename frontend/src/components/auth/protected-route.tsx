@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
-  allowedRoles?: ('user' | 'admin' | 'moderator')[]
+ allowedRoles?: ('player' | 'admin' | 'moderator')[]
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
@@ -18,7 +18,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
       if (!user) {
         router.push('/login')
       } else if (allowedRoles && !allowedRoles.includes(user.role)) {
-        router.push('/dashboard')
+        router.push(user.role === 'admin' ? '/admin' : '/players')
       }
     }
   }, [user, isLoading, router, allowedRoles])

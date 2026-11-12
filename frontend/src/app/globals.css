@@ -1,51 +1,97 @@
 @import "tailwindcss";
 
-@theme {
-  --color-primary: #1c1766;
-  
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border);
-  
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@theme {
   --animate-float: float 6s ease-in-out infinite;
   --animate-glow: glow 3s ease-in-out infinite;
-  
+
   @keyframes float {
     0%, 100% { transform: translateY(0px); }
     50% { transform: translateY(-20px); }
   }
-  
+
   @keyframes glow {
     0%, 100% { opacity: 0.5; }
     50% { opacity: 1; }
   }
 }
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --border: 214.3 31.8% 91.4%;
-  }
+:root {
+  --background: #f5f6fa;
+  --foreground: #0f1220;
+  --card: #ffffff;
+  --card-foreground: #0f1220;
+  --popover: #ffffff;
+  --popover-foreground: #0f1220;
+  --primary: #6d4aff;
+  --primary-foreground: #ffffff;
+  --secondary: #eef0f7;
+  --secondary-foreground: #0f1220;
+  --muted: #eef0f7;
+  --muted-foreground: #5b6378;
+  --accent: #ecebff;
+  --accent-foreground: #0f1220;
+  --destructive: #e0364f;
+  --success: #0fa97f;
+  --warning: #d98e04;
+  --border: #e3e6ef;
+  --input: #d5d9e6;
+  --ring: #6d4aff;
+}
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-  }
+.dark {
+  color-scheme: dark;
+  --background: #0b0d14;
+  --foreground: #f2f4f8;
+  --card: #121624;
+  --card-foreground: #f2f4f8;
+  --popover: #121624;
+  --popover-foreground: #f2f4f8;
+  --primary: #7c5cff;
+  --primary-foreground: #ffffff;
+  --secondary: #1a1f31;
+  --secondary-foreground: #f2f4f8;
+  --muted: #1a1f31;
+  --muted-foreground: #8b93a7;
+  --accent: #1e2440;
+  --accent-foreground: #f2f4f8;
+  --destructive: #f0506e;
+  --success: #22d3a0;
+  --warning: #f5b544;
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #7c5cff;
 }
 
 @layer base {
   * {
     border-color: var(--border);
   }
-  
+
   body {
     background-color: var(--background);
     color: var(--foreground);
@@ -58,4 +104,141 @@
 
 .animate-glow {
   animation: glow 3s ease-in-out infinite;
+}
+
+/* ───────── Login page effects ───────── */
+
+@property --beam-angle {
+  syntax: "<angle>";
+  initial-value: 270deg;
+  inherits: false;
+}
+
+@keyframes beam-spin {
+  from { --beam-angle: 270deg; }
+  to { --beam-angle: 630deg; }
+}
+
+@keyframes orb-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(70px, 50px, 0) scale(1.15); }
+}
+
+@keyframes orb-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-80px, -60px, 0) scale(1.1); }
+}
+
+@keyframes orb-drift-c {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-40px, 70px, 0) scale(1.2); }
+}
+
+@keyframes particle-rise {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 0.7; }
+  90% { opacity: 0.5; }
+  100% { transform: translateY(-110vh); opacity: 0; }
+}
+
+@keyframes shimmer-sweep {
+  from { transform: translateX(-150%) skewX(-20deg); }
+  to { transform: translateX(350%) skewX(-20deg); }
+}
+
+/* Two white beams, 180deg apart. They start at the top-left and
+   bottom-right corners and travel around the card edge. */
+.beam-border {
+  --beam-rgb: 109 74 255; /* violet in light mode, white in dark mode */
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0deg,
+    rgb(var(--beam-rgb) / 0) 15deg,
+    rgb(var(--beam-rgb) / 0.95) 45deg,
+    rgb(var(--beam-rgb) / 0) 75deg,
+    transparent 180deg,
+    rgb(var(--beam-rgb) / 0) 195deg,
+    rgb(var(--beam-rgb) / 0.95) 225deg,
+    rgb(var(--beam-rgb) / 0) 255deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: beam-spin 7s linear infinite;
+}
+
+.dark .beam-border {
+  --beam-rgb: 255 255 255;
+}
+
+.beam-glow {
+  padding: 3px;
+  filter: blur(7px);
+  opacity: 0.55;
+}
+
+.login-orb-a { animation: orb-drift-a 18s ease-in-out infinite; }
+.login-orb-b { animation: orb-drift-b 22s ease-in-out infinite; }
+.login-orb-c { animation: orb-drift-c 26s ease-in-out infinite; }
+
+.login-particle {
+  position: absolute;
+  bottom: -12px;
+  border-radius: 9999px;
+  animation: particle-rise linear infinite;
+}
+
+.login-grid {
+  background-image:
+    linear-gradient(to right, rgb(15 18 32 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(15 18 32 / 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 20%, transparent 70%);
+  mask-image: radial-gradient(ellipse at center, #000 20%, transparent 70%);
+}
+
+.dark .login-grid {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
+}
+
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-shimmer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+  transform: translateX(-150%) skewX(-20deg);
+  animation: shimmer-sweep 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.btn-shimmer:disabled::after {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beam-border,
+  .login-orb-a,
+  .login-orb-b,
+  .login-orb-c,
+  .login-particle,
+  .btn-shimmer::after {
+    animation: none;
+  }
 }
