@@ -33,6 +33,37 @@ export interface AuthResponse {
   }
 }
 
+export interface AdminUser {
+  id: string
+  email: string
+  username: string
+  first_name: string
+  last_name: string
+  phone_number: string | null
+  role: string
+  is_active: boolean
+  is_staff: boolean
+  is_superuser: boolean
+  is_email_verified: boolean
+  date_joined: string
+  last_login: string | null
+}
+
+export interface CreateAdminUserData {
+  email: string
+  username: string
+  first_name?: string
+  last_name?: string
+  phone_number?: string
+}
+
+export interface UpdateAdminUserData {
+  first_name?: string
+  last_name?: string
+  phone_number?: string
+  is_active?: boolean
+}
+
 class ApiService {
   private token: string | null = null
   private refreshToken: string | null = null
@@ -310,24 +341,39 @@ async resetPassword(
   }
 
   // Admin endpoints
-  async getAllUsers() {
-    return this.request('/users/', { method: 'GET' })
+  // Admin → users
+  async adminListUsers(): Promise<AdminUser[]> {
+    const res = await this.request('/admin/users/', { method: 'GET' })
+    return Array.isArray(res) ? res : res?.results ?? []
   }
 
-  async updateUserRole(userId: string, role: string) {
-    return this.request(`/users/${userId}/role/`, {
-      method: 'PATCH',
-      body: JSON.stringify({ role }),
+  async adminCreateUser(data: CreateAdminUserData): Promise<AdminUser> {
+    return this.request('/admin/users/', {
+      method: 'POST',
+      body: JSON.stringify(data),
     })
   }
 
-  async banUser(userId: string) {
-    return this.request(`/admin/users/${userId}/ban/`, { method: 'PATCH' })
+  async adminGetUser(id: string): Promise<AdminUser> {
+    return this.request(`/admin/users/${id}/`, { method: 'GET' })
+  }
+
+  async adminUpdateUser(id: string, data: UpdateAdminUserData): Promise<AdminUser> {
+    return this.request(`/admin/users/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async adminDeleteUser(id: string): Promise<void> {
+    await this.request(`/admin/users/${id}/`, { method: 'DELETE' })
   }
 
   async getPlatformStats() {
     return this.request('/admin/dashboard/stats/', { method: 'GET' })
   }
+
+
 
   // Wallet endpoints
   async getWalletBalance() {
