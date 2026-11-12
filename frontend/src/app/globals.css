@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
+/* Always match dark: utilities regardless of parent classes */
+@custom-variant dark (&:where(*, * *));
 
 @theme inline {
   --color-background: var(--background);
@@ -40,30 +41,8 @@
   }
 }
 
+/* Dark theme set as the default and only theme */
 :root {
-  --background: #f5f6fa;
-  --foreground: #0f1220;
-  --card: #ffffff;
-  --card-foreground: #0f1220;
-  --popover: #ffffff;
-  --popover-foreground: #0f1220;
-  --primary: #6d4aff;
-  --primary-foreground: #ffffff;
-  --secondary: #eef0f7;
-  --secondary-foreground: #0f1220;
-  --muted: #eef0f7;
-  --muted-foreground: #5b6378;
-  --accent: #ecebff;
-  --accent-foreground: #0f1220;
-  --destructive: #e0364f;
-  --success: #0fa97f;
-  --warning: #d98e04;
-  --border: #e3e6ef;
-  --input: #d5d9e6;
-  --ring: #6d4aff;
-}
-
-.dark {
   color-scheme: dark;
   --background: #0b0d14;
   --foreground: #f2f4f8;
@@ -146,10 +125,8 @@
   to { transform: translateX(350%) skewX(-20deg); }
 }
 
-/* Two white beams, 180deg apart. They start at the top-left and
-   bottom-right corners and travel around the card edge. */
 .beam-border {
-  --beam-rgb: 109 74 255; /* violet in light mode, white in dark mode */
+  --beam-rgb: 255 255 255; /* Locked to white beam */
   position: absolute;
   inset: 0;
   padding: 1.5px;
@@ -174,10 +151,6 @@
   animation: beam-spin 7s linear infinite;
 }
 
-.dark .beam-border {
-  --beam-rgb: 255 255 255;
-}
-
 .beam-glow {
   padding: 3px;
   filter: blur(7px);
@@ -197,17 +170,11 @@
 
 .login-grid {
   background-image:
-    linear-gradient(to right, rgb(15 18 32 / 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(15 18 32 / 0.06) 1px, transparent 1px);
+    linear-gradient(to right, rgb(255 255 255 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
   background-size: 48px 48px;
   -webkit-mask-image: radial-gradient(ellipse at center, #000 20%, transparent 70%);
   mask-image: radial-gradient(ellipse at center, #000 20%, transparent 70%);
-}
-
-.dark .login-grid {
-  background-image:
-    linear-gradient(to right, rgb(255 255 255 / 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
 }
 
 .btn-shimmer {
