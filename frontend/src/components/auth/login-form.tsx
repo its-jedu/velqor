@@ -345,6 +345,7 @@ export default function LoginForm() {
                 </CardFooter>
               </motion.form>
             </motion.div>
+          {/* </Card> */}
           </Card>
 
           {/* The two travelling white beams (on top of the card edge) */}
