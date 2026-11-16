@@ -206,11 +206,15 @@ AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default='velqor')
 AWS_S3_ENDPOINT_URL = config('AWS_S3_ENDPOINT_URL', default='https://a4e8aeb0a4facf6ad678607ea2bcc408.r2.cloudflarestorage.com')
 AWS_S3_CUSTOM_DOMAIN = config('AWS_S3_CUSTOM_DOMAIN', default='')
 AWS_S3_OBJECT_PARAMETERS = {'CacheControl': 'max-age=86400'}
-AWS_DEFAULT_ACL = 'public-read'
-AWS_QUERYSTRING_AUTH = False
 AWS_S3_SIGNATURE_VERSION = 's3v4'
 AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='')
+AWS_S3_FILE_OVERWRITE = False
 
 DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/' if not AWS_S3_ENDPOINT_URL else f'{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/'
+if AWS_S3_CUSTOM_DOMAIN:
+    MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
+elif AWS_S3_ENDPOINT_URL:
+    MEDIA_URL = f'{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/'
+else:
+    MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/'
 MEDIA_ROOT = ''

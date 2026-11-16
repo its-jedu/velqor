@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from datetime import timedelta
+from decimal import Decimal
 import uuid
 import string
 import random
@@ -225,7 +226,7 @@ class Tournament(models.Model):
     )
     platform = models.CharField(max_length=100, blank=True)
     description = models.TextField(blank=True)
-    cover_image = models.URLField(blank=True, null=True)
+    cover_image = models.ImageField(upload_to='tournament_covers/', blank=True, null=True)
 
     # Format (only enforced meaningfully for eFootball)
     tournament_type = models.CharField(
@@ -296,11 +297,11 @@ class Tournament(models.Model):
     def calculate_prize_pool(self):
         """Calculate platform fee, pool prize, and prize splits."""
         total_collection = self.entry_fee * self.max_players
-        self.platform_fee = round(total_collection * 0.30, 2)
+        self.platform_fee = round(total_collection * Decimal('0.30'), 2)
         self.pool_prize = round(total_collection - self.platform_fee, 2)
-        self.prize_1st = round(self.pool_prize * 0.60, 2)
-        self.prize_2nd = round(self.pool_prize * 0.25, 2)
-        self.prize_3rd = round(self.pool_prize * 0.15, 2)
+        self.prize_1st = round(self.pool_prize * Decimal('0.60'), 2)
+        self.prize_2nd = round(self.pool_prize * Decimal('0.25'), 2)
+        self.prize_3rd = round(self.pool_prize * Decimal('0.15'), 2)
 
     def save(self, *args, **kwargs):
         # Auto-generate join code for private tournaments
