@@ -13,6 +13,8 @@ from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.db.models import Count, Sum, Q, F
 from django.db.models.functions import TruncDate
 from datetime import timedelta
@@ -529,7 +531,12 @@ class TournamentListCreateView(APIView):
     def post(self, request):
         serializer = TournamentSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        tournament = serializer.save()
+        try:
+            tournament = serializer.save()
+        except DjangoValidationError as e:
+            return Response({'message': str(e.detail)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'message': f'Tournament creation failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(TournamentSerializer(tournament).data, status=status.HTTP_201_CREATED)
 
 
@@ -554,7 +561,12 @@ class TournamentDetailView(APIView):
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         serializer = TournamentSerializer(tournament, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        tournament = serializer.save()
+        try:
+            tournament = serializer.save()
+        except DjangoValidationError as e:
+            return Response({'message': str(e.detail)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'message': f'Tournament update failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(TournamentSerializer(tournament).data)
 
     def delete(self, request, pk):
