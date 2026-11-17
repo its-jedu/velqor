@@ -21,6 +21,7 @@ from django.db.models.functions import TruncDate
 from datetime import timedelta
 from django.utils import timezone
 import resend
+import itertools
 
 # New admin-panel domain models
 from .models import (
@@ -689,10 +690,111 @@ class TournamentStatusChangeView(APIView):
         tournament.status = new_status
         tournament.save()
 
+        # Auto-generate standings and matches when tournament becomes full
+        if new_status == 'full' and current_status != 'full':
+            _generate_standings_and_matches(tournament)
+
         return Response({
             'message': f'Tournament status changed from {current_status} to {new_status}.',
             'status': tournament.status
         }, status=status.HTTP_200_OK)
+
+def _generate_standings_and_matches(tournament):
+        """Auto-generate standings and match schedules when tournament becomes full."""
+        registrations = TournamentRegistration.objects.filter(
+            tournament=tournament
+        ).select_related('user').order_by('joined_at')
+
+        players = [reg.user for reg in registrations]
+
+        # Create standings for all players
+        for player in players:
+            TournamentStanding.objects.get_or_create(
+                tournament=tournament, user=player
+            )
+
+        # Generate matches based on tournament format
+        if tournament.tournament_type == 'league':
+            _generate_league_matches(tournament, players)
+        elif tournament.tournament_type == 'cup':
+            if tournament.cup_type == 'group_stage':
+                _generate_group_stage_matches(tournament, players)
+            else:
+                _generate_knockout_matches(tournament, players)
+
+def _generate_league_matches(tournament, players):
+        """Round-robin: every player plays every other player."""
+        player_list = list(players)
+        for i in range(len(player_list)):
+            for j in range(i + 1, len(player_list)):
+                Match.objects.create(
+                    tournament=tournament,
+                    player_one=player_list[i],
+                    player_two=player_list[j],
+                    status='pending',
+                )
+
+def _generate_knockout_matches(tournament, players):
+        """Single-elimination bracket."""
+        player_list = list(players)
+        n = len(player_list)
+
+        # Find next power of 2 for bracket
+        bracket_size = 1
+        while bracket_size < n:
+            bracket_size *= 2
+
+        # Add byes for missing players
+        byes = bracket_size - n
+        players_with_byes = list(player_list) + [None] * byes
+
+        # First round matches
+        for i in range(0, bracket_size, 2):
+            p1 = players_with_byes[i]
+            p2 = players_with_byes[i + 1]
+            if p1 and p2:
+                Match.objects.create(
+                    tournament=tournament,
+                    player_one=p1,
+                    player_two=p2,
+                    status='pending',
+                )
+            elif p1 and not p2:
+                # Bye - p1 advances automatically
+                Match.objects.create(
+                    tournament=tournament,
+                    player_one=p1,
+                    player_two=None,
+                    status='completed',
+                    winner=p1,
+                )
+
+def _generate_group_stage_matches(tournament, players):
+        """Group stage: groups of 4, round-robin within groups."""
+        player_list = list(players)
+        n = len(player_list)
+
+        # Calculate number of groups (aim for 4 players per group)
+        num_groups = max(1, (n + 3) // 4)
+        players_per_group = (n + num_groups - 1) // num_groups
+
+        # Distribute players into groups
+        groups = []
+        for i in range(num_groups):
+            start = i * players_per_group
+            end = min(start + players_per_group, n)
+            groups.append(player_list[start:end])
+
+        # Round-robin within each group
+        for group in groups:
+            for i in range(len(group)):
+                for j in range(i + 1, len(group)):
+                    Match.objects.create(
+                        tournament=tournament,
+                        player_one=group[i],
+                        player_two=group[j],
+                        status='pending',
+                    )
 
 
 # ============================================================================
@@ -751,7 +853,9 @@ class TournamentRegistrationListCreateView(APIView):
 
         # Auto-transition status
         if tournament.current_players >= tournament.max_players and tournament.status == 'open':
-            Tournament.objects.filter(pk=tournament.pk).update(status='full')
+            tournament.status = 'full'
+            tournament.save()
+            _generate_standings_and_matches(tournament)
 
         return Response(TournamentRegistrationSerializer(registration).data, status=status.HTTP_201_CREATED)
 
@@ -837,55 +941,93 @@ class MatchDetailView(APIView):
 
         # If match just became completed, update league standings and tournament status
         if old_status != 'completed' and match.status == 'completed':
-            self._update_match_results(match)
+            _update_match_results(match)
 
         return Response(MatchSerializer(match).data)
 
-    def _update_match_results(self, match):
-        """Update player standings and tournament status when a match is completed."""
-        tournament = match.tournament
-        player_one = match.player_one
-        player_two = match.player_two
-        winner = match.winner
 
-        # Get or create standings for both players
-        standing_one, _ = TournamentStanding.objects.get_or_create(
-            tournament=tournament, user=player_one
-        )
-        standing_two, _ = TournamentStanding.objects.get_or_create(
-            tournament=tournament, user=player_two
-        )
+def _update_match_results(match):
+    """Update player standings and tournament status when a match is completed."""
+    tournament = match.tournament
+    player_one = match.player_one
+    player_two = match.player_two
+    winner = match.winner
 
-        # League points: win=3, draw=1, loss=0
-        if tournament.tournament_type == 'league':
-            standing_one.played += 1
-            standing_two.played += 1
+    # Get or create standings for both players
+    standing_one, _ = TournamentStanding.objects.get_or_create(
+        tournament=tournament, user=player_one
+    )
+    standing_two, _ = TournamentStanding.objects.get_or_create(
+        tournament=tournament, user=player_two
+    )
 
-            if winner is None:
-                # Draw
-                standing_one.drawn += 1
-                standing_two.drawn += 1
-                standing_one.points += 1
-                standing_two.points += 1
-            elif winner == player_one:
-                standing_one.won += 1
-                standing_one.points += 3
-                standing_two.lost += 1
-            elif winner == player_two:
-                standing_two.won += 1
-                standing_two.points += 3
-                standing_one.lost += 1
+    # League points: win=3, draw=1, loss=0
+    if tournament.tournament_type == 'league':
+        standing_one.played += 1
+        standing_two.played += 1
 
-            standing_one.save()
-            standing_two.save()
+        if winner is None:
+            # Draw
+            standing_one.drawn += 1
+            standing_two.drawn += 1
+            standing_one.points += 1
+            standing_two.points += 1
+        elif winner == player_one:
+            standing_one.won += 1
+            standing_one.points += 3
+            standing_two.lost += 1
+        elif winner == player_two:
+            standing_two.won += 1
+            standing_two.points += 3
+            standing_one.lost += 1
 
-        # Auto-transition tournament status
-        if tournament.status == 'full' or tournament.status == 'open':
-            # Check if all matches are completed
-            total_matches = Match.objects.filter(tournament=tournament).count()
-            completed_matches = Match.objects.filter(tournament=tournament, status='completed').count()
-            if total_matches > 0 and completed_matches >= total_matches:
+        standing_one.save()
+        standing_two.save()
+
+    # Auto-transition tournament status
+    if tournament.status == 'full' or tournament.status == 'open':
+        # Check if all matches are completed
+        total_matches = Match.objects.filter(tournament=tournament).count()
+        completed_matches = Match.objects.filter(tournament=tournament, status='completed').count()
+        if total_matches > 0 and completed_matches >= total_matches:
+            # For cup group stage, generate knockout matches before completing
+            if tournament.tournament_type == 'cup' and tournament.cup_type == 'group_stage':
+                _generate_group_stage_knockout(tournament)
+            else:
                 Tournament.objects.filter(pk=tournament.pk).update(status='completed')
+
+
+def _generate_group_stage_knockout(tournament):
+    """Generate knockout matches from group stage top players."""
+    standings = TournamentStanding.objects.filter(
+        tournament=tournament
+    ).order_by('-points', '-won')[:4]
+
+    if len(standings) < 2:
+        return
+
+    # Semi-finals: 1st vs 4th, 2nd vs 3rd
+    Match.objects.create(
+        tournament=tournament,
+        player_one=standings[0].user,
+        player_two=standings[3].user,
+        status='pending',
+    )
+    Match.objects.create(
+        tournament=tournament,
+        player_one=standings[1].user,
+        player_two=standings[2].user,
+        status='pending',
+    )
+
+    # Third place match (if allowed)
+    if tournament.allows_third_place:
+        Match.objects.create(
+            tournament=tournament,
+            player_one=None,
+            player_two=None,
+            status='pending',
+        )
 
     def delete(self, request, pk):
         match = self.get_object(pk)

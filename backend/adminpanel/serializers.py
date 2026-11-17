@@ -195,13 +195,18 @@ class TournamentSerializer(serializers.ModelSerializer):
 
 
 class TournamentRegistrationSerializer(serializers.ModelSerializer):
-    user_email = serializers.CharField(source='user.email', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
     tournament_name = serializers.CharField(source='tournament.name', read_only=True)
 
     class Meta:
         model = TournamentRegistration
-        fields = ['id', 'tournament', 'tournament_name', 'user', 'user_email', 'joined_at', 'is_paid']
-        read_only_fields = ['id', 'joined_at', 'user_email', 'tournament_name']
+        fields = ['id', 'tournament', 'tournament_name', 'username', 'joined_at', 'is_paid']
+        read_only_fields = ['id', 'joined_at', 'tournament_name', 'username']
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret.pop('tournament', None)
+        return ret
 
 
 class MatchSerializer(serializers.ModelSerializer):
