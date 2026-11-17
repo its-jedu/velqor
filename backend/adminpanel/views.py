@@ -646,7 +646,7 @@ class TournamentDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         tournament.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({'message': 'Tournament deleted successfully.'}, status=status.HTTP_200_OK)
 
 
 # ============================================================================

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.conf import settings
 from authentication.models import User, Role, Permission
 from authentication.permissions import RoleChoices
 from .models import (
@@ -8,7 +9,7 @@ from .models import (
 
 
 # ============================================================================
-# EXISTING ADMIN SERIALIZERS (kept unchanged)
+# ADMIN SERIALIZERS
 # ============================================================================
 
 class UserAdminSerializer(serializers.ModelSerializer):
@@ -97,8 +98,6 @@ class GameSerializer(serializers.ModelSerializer):
 
 class TournamentSerializer(serializers.ModelSerializer):
     game_name = serializers.CharField(source='game.name', read_only=True)
-    created_by_email = serializers.CharField(source='created_by.email', read_only=True)
-    current_players_count = serializers.IntegerField(source='current_players', read_only=True)
 
     class Meta:
         model = Tournament
@@ -106,16 +105,16 @@ class TournamentSerializer(serializers.ModelSerializer):
             'id', 'name', 'game', 'game_name', 'platform', 'description',
             'cover_image', 'tournament_type', 'cup_type', 'allows_third_place',
             'status', 'join_type', 'join_code', 'min_players', 'max_players',
-            'current_players', 'current_players_count', 'entry_fee', 'pool_prize',
+            'current_players', 'entry_fee', 'pool_prize',
             'platform_fee', 'prize_1st', 'prize_2nd', 'prize_3rd',
             'registration_open_date', 'registration_close_date', 'start_date',
-            'end_date', 'rules', 'created_by', 'created_by_email',
+            'end_date', 'rules', 'created_by',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'join_code', 'pool_prize', 'platform_fee', 'prize_1st',
             'prize_2nd', 'prize_3rd', 'current_players', 'created_by',
-            'created_by_email', 'created_at', 'updated_at',
+            'game_name', 'created_at', 'updated_at',
         ]
 
     def validate(self, attrs):
@@ -173,6 +172,26 @@ class TournamentSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret.pop('game', None)
+        # Return created_by role + email instead of UUID
+        if instance.created_by:
+            role_name = instance.created_by.role.name if instance.created_by.role else 'player'
+            ret['created_by'] = f'{role_name} ({instance.created_by.email})'
+        else:
+            ret['created_by'] = None
+        # Return full cover_image URL
+        if instance.cover_image:
+            if instance.cover_image.startswith('http'):
+                ret['cover_image'] = instance.cover_image
+            else:
+                base = getattr(settings, 'R2_PUBLIC_BASE', '')
+                ret['cover_image'] = f'{base}/{instance.cover_image}' if base else instance.cover_image
+        else:
+            ret['cover_image'] = None
+        return ret
 
 
 class TournamentRegistrationSerializer(serializers.ModelSerializer):
