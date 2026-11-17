@@ -649,6 +649,52 @@ class TournamentDetailView(APIView):
         return Response({'message': 'Tournament deleted successfully.'}, status=status.HTTP_200_OK)
 
 
+class TournamentStatusChangeView(APIView):
+    """
+    PATCH - Change tournament status (admin only)
+    Body: { "status": "open" | "full" | "started" | "completed" | "draft" }
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def patch(self, request, pk):
+        try:
+            tournament = Tournament.objects.get(pk=pk)
+        except Tournament.DoesNotExist:
+            return Response({'message': 'Tournament not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('status')
+        valid_statuses = ['draft', 'open', 'full', 'started', 'completed']
+        if new_status not in valid_statuses:
+            return Response({
+                'message': f'Invalid status. Must be one of: {", ".join(valid_statuses)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate status transitions
+        current_status = tournament.status
+        if current_status == 'completed':
+            return Response({'message': 'Cannot change status of a completed tournament.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if current_status == 'draft' and new_status not in ('open', 'draft'):
+            return Response({'message': 'Draft tournaments can only be opened or kept as draft.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if current_status == 'open' and new_status not in ('open', 'full', 'started', 'draft'):
+            return Response({'message': 'Open tournaments can only be set to open, full, started, or draft.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if current_status == 'full' and new_status not in ('full', 'started', 'open'):
+            return Response({'message': 'Full tournaments can only be set to full, started, or open.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if current_status == 'started' and new_status not in ('started', 'completed', 'open'):
+            return Response({'message': 'Started tournaments can only be set to started, completed, or open.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        tournament.status = new_status
+        tournament.save()
+
+        return Response({
+            'message': f'Tournament status changed from {current_status} to {new_status}.',
+            'status': tournament.status
+        }, status=status.HTTP_200_OK)
+
+
 # ============================================================================
 # TOURNAMENT REGISTRATION (players joining)
 # ============================================================================
@@ -865,3 +911,67 @@ class TournamentStandingsView(APIView):
         ).select_related('user').order_by('-points', '-won')
         serializer = TournamentStandingSerializer(standings, many=True)
         return Response(serializer.data)
+
+
+# ============================================================================
+# PLAYER-FACING TOURNAMENT ENDPOINTS
+# ============================================================================
+
+class PlayerTournamentListView(APIView):
+    """
+    GET - List available tournaments for players (status='open' only)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tournaments = Tournament.objects.filter(
+            status='open'
+        ).select_related('game').order_by('start_date')
+        serializer = TournamentSerializer(tournaments, many=True)
+        return Response(serializer.data)
+
+
+class PlayerTournamentRegisterView(APIView):
+    """
+    POST - Player joins a tournament
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, tournament_pk):
+        try:
+            tournament = Tournament.objects.get(pk=tournament_pk)
+        except Tournament.DoesNotExist:
+            return Response({'message': 'Tournament not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+
+        # Prevent double registration
+        if TournamentRegistration.objects.filter(tournament=tournament, user=user).exists():
+            return Response({'message': 'Already registered for this tournament.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check tournament is open for registration
+        if tournament.status not in ('draft', 'open'):
+            return Response({'message': 'Tournament is not open for registration.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check private join code if applicable
+        if tournament.join_type == 'private':
+            join_code = request.data.get('join_code')
+            if not join_code or join_code != tournament.join_code:
+                return Response({'message': 'Invalid or missing join code.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Check capacity
+        if tournament.current_players >= tournament.max_players:
+            return Response({'message': 'Tournament is full.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        registration = TournamentRegistration.objects.create(tournament=tournament, user=user)
+
+        # Increment current_players
+        Tournament.objects.filter(pk=tournament.pk).update(current_players=F('current_players') + 1)
+        tournament.refresh_from_db()
+
+        # Auto-transition status
+        if tournament.current_players >= tournament.max_players and tournament.status == 'open':
+            Tournament.objects.filter(pk=tournament.pk).update(status='full')
+
+        serializer = TournamentRegistrationSerializer(registration)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
