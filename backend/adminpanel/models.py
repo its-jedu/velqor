@@ -379,3 +379,29 @@ class Match(models.Model):
 
     def __str__(self):
         return f'Match {self.id} - {self.tournament.name}'
+
+
+class TournamentStanding(models.Model):
+    """Player standings/points within a tournament (league format)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tournament = models.ForeignKey(
+        Tournament, on_delete=models.CASCADE, related_name='standings', db_index=True
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='tournament_standings', db_index=True
+    )
+    played = models.PositiveIntegerField(default=0)
+    won = models.PositiveIntegerField(default=0)
+    drawn = models.PositiveIntegerField(default=0)
+    lost = models.PositiveIntegerField(default=0)
+    points = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ['tournament', 'user']
+        indexes = [
+            models.Index(fields=['tournament', '-points'], name='standing_tournament_points_idx'),
+            models.Index(fields=['tournament', 'user'], name='standing_tournament_user_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.user.email} - {self.tournament.name} ({self.points} pts)'

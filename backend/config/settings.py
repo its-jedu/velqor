@@ -219,3 +219,4 @@ elif AWS_S3_ENDPOINT_URL:
 else:
     MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/'
 MEDIA_ROOT = ''
+R2_PUBLIC_BASE = config('R2_PUBLIC_BASE', default='')

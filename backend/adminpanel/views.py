@@ -5,7 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from .permissions import IsAdminUser, IsModeratorOrAdmin
 from .serializers import (
     UserAdminSerializer, RoleSerializer, PermissionSerializer,
-    GameSerializer, TournamentSerializer, TournamentRegistrationSerializer, MatchSerializer,
+    GameSerializer, TournamentSerializer, TournamentRegistrationSerializer,
+    MatchSerializer, TournamentStandingSerializer,
 )
 from authentication.models import User, Role, Permission
 from authentication.permissions import RoleChoices
@@ -20,26 +21,51 @@ from django.db.models.functions import TruncDate
 from datetime import timedelta
 from django.utils import timezone
 import resend
-import requests
 
 # New admin-panel domain models
 from .models import (
     Withdrawal, Dispute, FlaggedAccount, Deposit, Payout,
-    Game, Tournament, TournamentRegistration, Match,
+    Game, Tournament, TournamentRegistration, Match, TournamentStanding,
 )
 
 
-WORKER_UPLOAD_URL = 'https://velqor-uploads.olajideweb.workers.dev/upload'
+# ============================================================================
+# R2 DIRECT UPLOAD
+# ============================================================================
+
+import boto3
+from botocore.client import Config
+
+R2_PUBLIC_BASE = settings.R2_PUBLIC_BASE
 
 
-def upload_image_to_worker(image_file):
-    """Send image file to Cloudflare Worker, get back public R2 URL."""
-    files = {'file': (image_file.name, image_file.read(), image_file.content_type)}
-    resp = requests.post(WORKER_UPLOAD_URL, files=files, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    # Worker returns the URL under 'publicUrl' key
-    return data.get('publicUrl') or data.get('url') or data.get('cover_image') or data.get('public_url') or data.get('fileUrl')
+def upload_image_to_r2(image_file, folder='tournament_covers'):
+    """Upload image file directly to Cloudflare R2, get back public URL."""
+    s3 = boto3.client(
+        's3',
+        endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=settings.AWS_S3_REGION_NAME,
+        config=Config(signature_version='s3v4'),
+    )
+
+    key = f'{folder}/{image_file.name}'
+    image_file.seek(0)
+
+    s3.put_object(
+        Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+        Key=key,
+        Body=image_file.read(),
+        ContentType=image_file.content_type or 'application/octet-stream',
+    )
+
+    return f'{R2_PUBLIC_BASE}/{key}'
+
+
+# ============================================================================
+# DASHBOARD & ANALYTICS (existing, kept unchanged)
+# ============================================================================
 
 
 # ============================================================================
@@ -548,7 +574,7 @@ class TournamentListCreateView(APIView):
 
         if cover_image_file:
             try:
-                cover_image_url = upload_image_to_worker(cover_image_file)
+                cover_image_url = upload_image_to_r2(cover_image_file)
             except Exception as e:
                 return Response({'message': f'Image upload failed: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -592,7 +618,7 @@ class TournamentDetailView(APIView):
 
         if cover_image_file:
             try:
-                cover_image_url = upload_image_to_worker(cover_image_file)
+                cover_image_url = upload_image_to_r2(cover_image_file)
             except Exception as e:
                 return Response({'message': f'Image upload failed: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -760,8 +786,60 @@ class MatchDetailView(APIView):
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         serializer = MatchSerializer(match, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        old_status = match.status
         match = serializer.save()
+
+        # If match just became completed, update league standings and tournament status
+        if old_status != 'completed' and match.status == 'completed':
+            self._update_match_results(match)
+
         return Response(MatchSerializer(match).data)
+
+    def _update_match_results(self, match):
+        """Update player standings and tournament status when a match is completed."""
+        tournament = match.tournament
+        player_one = match.player_one
+        player_two = match.player_two
+        winner = match.winner
+
+        # Get or create standings for both players
+        standing_one, _ = TournamentStanding.objects.get_or_create(
+            tournament=tournament, user=player_one
+        )
+        standing_two, _ = TournamentStanding.objects.get_or_create(
+            tournament=tournament, user=player_two
+        )
+
+        # League points: win=3, draw=1, loss=0
+        if tournament.tournament_type == 'league':
+            standing_one.played += 1
+            standing_two.played += 1
+
+            if winner is None:
+                # Draw
+                standing_one.drawn += 1
+                standing_two.drawn += 1
+                standing_one.points += 1
+                standing_two.points += 1
+            elif winner == player_one:
+                standing_one.won += 1
+                standing_one.points += 3
+                standing_two.lost += 1
+            elif winner == player_two:
+                standing_two.won += 1
+                standing_two.points += 3
+                standing_one.lost += 1
+
+            standing_one.save()
+            standing_two.save()
+
+        # Auto-transition tournament status
+        if tournament.status == 'full' or tournament.status == 'open':
+            # Check if all matches are completed
+            total_matches = Match.objects.filter(tournament=tournament).count()
+            completed_matches = Match.objects.filter(tournament=tournament, status='completed').count()
+            if total_matches > 0 and completed_matches >= total_matches:
+                Tournament.objects.filter(pk=tournament.pk).update(status='completed')
 
     def delete(self, request, pk):
         match = self.get_object(pk)
@@ -769,3 +847,21 @@ class MatchDetailView(APIView):
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         match.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TournamentStandingsView(APIView):
+    """
+    GET - List standings for a tournament (?tournament=<id>)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tournament_id = request.query_params.get('tournament')
+        if not tournament_id:
+            return Response({'message': 'tournament query parameter required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        standings = TournamentStanding.objects.filter(
+            tournament_id=tournament_id
+        ).select_related('user').order_by('-points', '-won')
+        serializer = TournamentStandingSerializer(standings, many=True)
+        return Response(serializer.data)

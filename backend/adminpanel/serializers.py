@@ -2,7 +2,7 @@ from rest_framework import serializers
 from authentication.models import User, Role, Permission
 from authentication.permissions import RoleChoices
 from .models import (
-    Game, Tournament, TournamentRegistration, Match,
+    Game, Tournament, TournamentRegistration, Match, TournamentStanding,
     Withdrawal, Dispute, FlaggedAccount, Deposit, Payout,
 )
 
@@ -199,3 +199,16 @@ class MatchSerializer(serializers.ModelSerializer):
             'played_at', 'created_at',
         ]
         read_only_fields = ['id', 'winner', 'played_at', 'created_at']
+
+
+class TournamentStandingSerializer(serializers.ModelSerializer):
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+
+    class Meta:
+        model = TournamentStanding
+        fields = [
+            'id', 'tournament', 'user', 'user_email', 'username',
+            'played', 'won', 'drawn', 'lost', 'points',
+        ]
+        read_only_fields = ['id', 'played', 'won', 'drawn', 'lost', 'points']

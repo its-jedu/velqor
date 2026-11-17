@@ -16,6 +16,7 @@ from .views import (
     TournamentRegistrationDetailView,
     MatchListCreateView,
     MatchDetailView,
+    TournamentStandingsView,
 )
 
 urlpatterns = [
@@ -45,4 +46,7 @@ urlpatterns = [
     # Matches
     path('matches/', MatchListCreateView.as_view(), name='match-list-create'),
     path('matches/<uuid:pk>/', MatchDetailView.as_view(), name='match-detail'),
+
+    # Standings
+    path('standings/', TournamentStandingsView.as_view(), name='tournament-standings'),
 ]
