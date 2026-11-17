@@ -1,7 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
-from django.core.exceptions import ValidationError
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
@@ -227,7 +226,7 @@ class Tournament(models.Model):
     )
     platform = models.CharField(max_length=100, blank=True)
     description = models.TextField(blank=True)
-    cover_image = models.ImageField(upload_to='tournament_covers/', blank=True, null=True)
+    cover_image = models.URLField(blank=True, null=True)
 
     # Format (only enforced meaningfully for eFootball)
     tournament_type = models.CharField(
@@ -316,11 +315,7 @@ class Tournament(models.Model):
         if self.start_date and not self.end_date:
             self.end_date = self.start_date + timedelta(weeks=2)
 
-        try:
-            super().save(*args, **kwargs)
-        except Exception as e:
-            # If S3/R2 upload fails, abort and raise error — never save locally
-            raise ValidationError({'cover_image': f'Failed to upload to R2 storage: {str(e)}'})
+        super().save(*args, **kwargs)
 
 
 class TournamentRegistration(models.Model):

@@ -20,12 +20,26 @@ from django.db.models.functions import TruncDate
 from datetime import timedelta
 from django.utils import timezone
 import resend
+import requests
 
 # New admin-panel domain models
 from .models import (
     Withdrawal, Dispute, FlaggedAccount, Deposit, Payout,
     Game, Tournament, TournamentRegistration, Match,
 )
+
+
+WORKER_UPLOAD_URL = 'https://velqor-uploads.olajideweb.workers.dev/upload'
+
+
+def upload_image_to_worker(image_file):
+    """Send image file to Cloudflare Worker, get back public R2 URL."""
+    files = {'file': (image_file.name, image_file.read(), image_file.content_type)}
+    resp = requests.post(WORKER_UPLOAD_URL, files=files, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    # Worker returns the URL under 'publicUrl' key
+    return data.get('publicUrl') or data.get('url') or data.get('cover_image') or data.get('public_url') or data.get('fileUrl')
 
 
 # ============================================================================
@@ -529,7 +543,20 @@ class TournamentListCreateView(APIView):
         return Response(serializer.data)
 
     def post(self, request):
-        serializer = TournamentSerializer(data=request.data, context={'request': request})
+        cover_image_file = request.FILES.get('cover_image')
+        cover_image_url = None
+
+        if cover_image_file:
+            try:
+                cover_image_url = upload_image_to_worker(cover_image_file)
+            except Exception as e:
+                return Response({'message': f'Image upload failed: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = request.data.copy()
+        if cover_image_url:
+            data['cover_image'] = cover_image_url
+
+        serializer = TournamentSerializer(data=data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         try:
             tournament = serializer.save()
@@ -559,7 +586,21 @@ class TournamentDetailView(APIView):
         tournament = self.get_object(pk)
         if not tournament:
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = TournamentSerializer(tournament, data=request.data, partial=True, context={'request': request})
+
+        cover_image_file = request.FILES.get('cover_image')
+        cover_image_url = None
+
+        if cover_image_file:
+            try:
+                cover_image_url = upload_image_to_worker(cover_image_file)
+            except Exception as e:
+                return Response({'message': f'Image upload failed: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = request.data.copy()
+        if cover_image_url:
+            data['cover_image'] = cover_image_url
+
+        serializer = TournamentSerializer(tournament, data=data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
         try:
             tournament = serializer.save()
