@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     
     'authentication',
     'adminpanel',
+    'tournaments',
+    'django_q',
 ]
 
 MIDDLEWARE = [
@@ -220,3 +222,22 @@ else:
     MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/'
 MEDIA_ROOT = ''
 R2_PUBLIC_BASE = config('R2_PUBLIC_BASE', default='')
+
+# ============================================================================
+# django-q2 Configuration (Background Task Worker)
+# ============================================================================
+Q_CLUSTER = {
+    'name': 'velqor',
+    'workers': 4,
+    'recycle': 500,
+    'timeout': 90,
+    'retry': 120,
+    'compress': True,
+    'cpu_affinity': 1,
+    'save_limit': 250,
+    'queue_limit': 500,
+    'bulk': 10,
+    'orm': 'default',
+    'redis': None,
+    'sync': False,
+}

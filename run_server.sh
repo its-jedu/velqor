@@ -34,6 +34,11 @@ echo -e "${GREEN}Starting Django on http://127.0.0.1:8000${NC}"
 python manage.py runserver 127.0.0.1:8000 &
 BACKEND_PID=$!
 
+# Start django-q2 worker (background task processor)
+echo -e "${GREEN}Starting Django Q2 worker...${NC}"
+python manage.py qcluster &
+WORKER_PID=$!
+
 # --- Frontend ---
 cd "$(dirname "$0")/frontend"
 
@@ -48,6 +53,6 @@ echo -e "${GREEN}Starting Next.js on http://localhost:3000${NC}"
 npm run dev &
 FRONTEND_PID=$!
 
-# Wait for both
-trap "kill $BACKEND_PID $FRONTEND_PID; exit" INT TERM
-wait $BACKEND_PID $FRONTEND_PID
+# Wait for all
+trap "kill $BACKEND_PID $WORKER_PID $FRONTEND_PID; exit" INT TERM
+wait $BACKEND_PID $WORKER_PID $FRONTEND_PID

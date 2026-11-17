@@ -8,8 +8,6 @@ from .views import (
     RoleDetailView,
     PermissionListCreateView,
     PermissionDetailView,
-    GameListCreateView,
-    GameDetailView,
     TournamentListCreateView,
     TournamentDetailView,
     TournamentStatusChangeView,
@@ -18,8 +16,6 @@ from .views import (
     MatchListCreateView,
     MatchDetailView,
     TournamentStandingsView,
-    PlayerTournamentListView,
-    PlayerTournamentRegisterView,
 )
 
 urlpatterns = [
@@ -33,10 +29,6 @@ urlpatterns = [
     path('roles/<int:pk>/', RoleDetailView.as_view(), name='role-detail'),
     path('permissions/', PermissionListCreateView.as_view(), name='permission-list-create'),
     path('permissions/<int:pk>/', PermissionDetailView.as_view(), name='permission-detail'),
-
-    # Games
-    path('games/', GameListCreateView.as_view(), name='game-list-create'),
-    path('games/<int:pk>/', GameDetailView.as_view(), name='game-detail'),
 
     # Tournaments
     path('tournaments/', TournamentListCreateView.as_view(), name='tournament-list-create'),
@@ -53,10 +45,4 @@ urlpatterns = [
 
     # Standings
     path('standings/', TournamentStandingsView.as_view(), name='tournament-standings'),
-]
-
-# Player-facing URLs (included under /api/v1/ in main urls.py)
-player_urlpatterns = [
-    path('tournaments/', PlayerTournamentListView.as_view(), name='player-tournament-list'),
-    path('tournaments/<uuid:tournament_pk>/join/', PlayerTournamentRegisterView.as_view(), name='player-tournament-join'),
 ]
