@@ -190,6 +190,12 @@ class Match(models.Model):
         ('completed', 'Completed'),
     ]
 
+    VERIFICATION_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tournament = models.ForeignKey(
         Tournament, on_delete=models.CASCADE, related_name='matches', db_index=True
@@ -209,6 +215,14 @@ class Match(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True
     )
+    verification_status = models.CharField(
+        max_length=20, choices=VERIFICATION_CHOICES, default='pending', db_index=True
+    )
+    approved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='verified_matches'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
     played_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -217,10 +231,50 @@ class Match(models.Model):
         indexes = [
             models.Index(fields=['tournament', 'status'], name='match_tournament_status_idx'),
             models.Index(fields=['-created_at'], name='match_recent_idx'),
+            models.Index(fields=['verification_status'], name='match_verification_idx'),
         ]
 
     def __str__(self):
         return f'Match {self.id} - {self.tournament.name}'
+
+
+class MatchResult(models.Model):
+    """
+    A player's submitted result for a match they participated in.
+    Both players must submit; identical scores auto-confirm the match.
+    Admin can manually approve/reject using screenshots.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('confirmed', 'Confirmed'),
+        ('rejected', 'Rejected'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    match = models.ForeignKey(
+        Match, on_delete=models.CASCADE, related_name='results', db_index=True
+    )
+    submitted_by = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='match_results', db_index=True
+    )
+    player_one_score = models.PositiveIntegerField()
+    player_two_score = models.PositiveIntegerField()
+    screenshot = models.FileField(upload_to='match_screenshots/%Y/%m/%d/')
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True
+    )
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['match', 'submitted_by']
+        indexes = [
+            models.Index(fields=['match', 'submitted_by'], name='result_match_user_idx'),
+            models.Index(fields=['status'], name='result_status_idx'),
+        ]
+
+    def __str__(self):
+        return f'Result by {self.submitted_by.email} for Match {self.match.id}'
 
 
 class TournamentStanding(models.Model):
@@ -232,11 +286,15 @@ class TournamentStanding(models.Model):
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='tournament_standings', db_index=True
     )
-    played = models.PositiveIntegerField(default=0)
-    won = models.PositiveIntegerField(default=0)
-    drawn = models.PositiveIntegerField(default=0)
-    lost = models.PositiveIntegerField(default=0)
-    points = models.PositiveIntegerField(default=0)
+    played = models.PositiveIntegerField(default=0)        # GP
+    won = models.PositiveIntegerField(default=0)           # W
+    drawn = models.PositiveIntegerField(default=0)         # D
+    lost = models.PositiveIntegerField(default=0)          # L
+    goals_for = models.PositiveIntegerField(default=0)     # GF
+    goals_against = models.PositiveIntegerField(default=0) # GA
+    goal_difference = models.IntegerField(default=0)       # GD
+    points = models.PositiveIntegerField(default=0)        # P
+    form = models.CharField(max_length=10, default='')     # last 5 results e.g. WDLWW
 
     class Meta:
         unique_together = ['tournament', 'user']

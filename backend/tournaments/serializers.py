@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.conf import settings
 from .models import (
     Game, Tournament, TournamentRegistration, Match, TournamentStanding,
+    MatchResult,
 )
 
 
@@ -130,6 +131,7 @@ class MatchSerializer(serializers.ModelSerializer):
     player_one_email = serializers.CharField(source='player_one.email', read_only=True)
     player_two_email = serializers.CharField(source='player_two.email', read_only=True)
     winner_email = serializers.CharField(source='winner.email', read_only=True)
+    approved_by_email = serializers.CharField(source='approved_by.email', read_only=True)
 
     class Meta:
         model = Match
@@ -137,9 +139,10 @@ class MatchSerializer(serializers.ModelSerializer):
             'id', 'tournament', 'player_one', 'player_one_email',
             'player_two', 'player_two_email', 'winner', 'winner_email',
             'player_one_score', 'player_two_score', 'status',
-            'played_at', 'created_at',
+            'verification_status', 'approved_by', 'approved_by_email',
+            'approved_at', 'played_at', 'created_at',
         ]
-        read_only_fields = ['id', 'winner', 'played_at', 'created_at']
+        read_only_fields = ['id', 'winner', 'played_at', 'created_at', 'approved_by', 'approved_at']
 
 
 class TournamentStandingSerializer(serializers.ModelSerializer):
@@ -150,6 +153,26 @@ class TournamentStandingSerializer(serializers.ModelSerializer):
         model = TournamentStanding
         fields = [
             'id', 'tournament', 'user', 'user_email', 'username',
-            'played', 'won', 'drawn', 'lost', 'points',
+            'played', 'won', 'drawn', 'lost',
+            'goals_for', 'goals_against', 'goal_difference',
+            'points', 'form',
         ]
-        read_only_fields = ['id', 'played', 'won', 'drawn', 'lost', 'points']
+        read_only_fields = [
+            'id', 'played', 'won', 'drawn', 'lost',
+            'goals_for', 'goals_against', 'goal_difference',
+            'points', 'form',
+        ]
+
+
+class MatchResultSerializer(serializers.ModelSerializer):
+    submitted_by_email = serializers.CharField(source='submitted_by.email', read_only=True)
+    submitted_by_username = serializers.CharField(source='submitted_by.username', read_only=True)
+
+    class Meta:
+        model = MatchResult
+        fields = [
+            'id', 'match', 'submitted_by', 'submitted_by_email',
+            'submitted_by_username', 'player_one_score', 'player_two_score',
+            'screenshot', 'status', 'submitted_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'submitted_by', 'status', 'submitted_at', 'updated_at']

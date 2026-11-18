@@ -734,6 +734,13 @@ class MatchListCreateView(APIView):
         return Response(serializer.data)
 
     def post(self, request):
+        tournament_id = request.data.get('tournament')
+        if tournament_id:
+            existing = Match.objects.filter(tournament_id=tournament_id).exists()
+            if existing:
+                return Response({
+                    'message': 'Matches already exist for this tournament. Auto-generated matches cannot be duplicated. Use PATCH to update match results instead.'
+                }, status=status.HTTP_400_BAD_REQUEST)
         serializer = MatchSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         match = serializer.save()
@@ -759,21 +766,29 @@ class MatchDetailView(APIView):
         match = self.get_object(pk)
         if not match:
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        allowed_fields = {'verification_status'}
+        incoming_fields = set(request.data.keys())
+        if not incoming_fields.issubset(allowed_fields):
+            return Response({
+                'message': 'Direct match score changes are not allowed. Players submit results via /submit-result/ and admins verify via /verify/.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = MatchSerializer(match, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        old_status = match.status
         match = serializer.save()
-
-        # If match just became completed, update league standings and tournament status
-        if old_status != 'completed' and match.status == 'completed':
-            _update_match_results(match)
-
         return Response(MatchSerializer(match).data)
 
     def delete(self, request, pk):
         match = self.get_object(pk)
         if not match:
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        # Prevent deletion of matches that belong to a tournament that has already
+        # been filled (auto-generated matches exist).
+        if match.tournament.status in ('full', 'started', 'completed'):
+            return Response({
+                'message': 'Cannot delete matches for a tournament that is already full, started, or completed. Matches were auto-generated.'
+            }, status=status.HTTP_403_FORBIDDEN)
         match.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

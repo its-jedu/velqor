@@ -9,6 +9,7 @@ from .serializers import (
 )
 from .models import (
     Game, Tournament, TournamentRegistration, Match, TournamentStanding,
+    MatchResult,
 )
 from authentication.models import User
 from authentication.permissions import RoleChoices
@@ -252,14 +253,22 @@ def _generate_standings_and_matches(tournament):
 
 
 def _generate_league_matches(tournament, players):
-    """Round-robin: every player plays every other player."""
+    """Round-robin: every player plays every other player twice (home + away)."""
     player_list = list(players)
     for i in range(len(player_list)):
         for j in range(i + 1, len(player_list)):
+            # First leg
             Match.objects.create(
                 tournament=tournament,
                 player_one=player_list[i],
                 player_two=player_list[j],
+                status='pending',
+            )
+            # Second leg (reverse fixture)
+            Match.objects.create(
+                tournament=tournament,
+                player_one=player_list[j],
+                player_two=player_list[i],
                 status='pending',
             )
 
@@ -361,11 +370,13 @@ def _generate_group_stage_knockout(tournament):
 
 
 def _update_match_results(match):
-    """Update player standings and tournament status when a match is completed."""
+    """Update player standings and tournament status when a match is completed/verified."""
     tournament = match.tournament
     player_one = match.player_one
     player_two = match.player_two
     winner = match.winner
+    p1_score = match.player_one_score
+    p2_score = match.player_two_score
 
     # Get or create standings for both players
     standing_one, _ = TournamentStanding.objects.get_or_create(
@@ -375,10 +386,16 @@ def _update_match_results(match):
         tournament=tournament, user=player_two
     )
 
-    # League points: win=3, draw=1, loss=0
+    # League points & stats: win=3, draw=1, loss=0
     if tournament.tournament_type == 'league':
         standing_one.played += 1
         standing_two.played += 1
+        standing_one.goals_for += p1_score
+        standing_one.goals_against += p2_score
+        standing_two.goals_for += p2_score
+        standing_two.goals_against += p1_score
+        standing_one.goal_difference = standing_one.goals_for - standing_one.goals_against
+        standing_two.goal_difference = standing_two.goals_for - standing_two.goals_against
 
         if winner is None:
             # Draw
@@ -386,29 +403,60 @@ def _update_match_results(match):
             standing_two.drawn += 1
             standing_one.points += 1
             standing_two.points += 1
+            standing_one.form = _update_form(standing_one.form, 'D')
+            standing_two.form = _update_form(standing_two.form, 'D')
         elif winner == player_one:
             standing_one.won += 1
             standing_one.points += 3
             standing_two.lost += 1
+            standing_one.form = _update_form(standing_one.form, 'W')
+            standing_two.form = _update_form(standing_two.form, 'L')
         elif winner == player_two:
             standing_two.won += 1
             standing_two.points += 3
             standing_one.lost += 1
+            standing_one.form = _update_form(standing_one.form, 'L')
+            standing_two.form = _update_form(standing_two.form, 'W')
 
         standing_one.save()
         standing_two.save()
 
     # Auto-transition tournament status
-    if tournament.status == 'full' or tournament.status == 'open':
-        # Check if all matches are completed
+    if tournament.status in ('full', 'open', 'started'):
         total_matches = Match.objects.filter(tournament=tournament).count()
         completed_matches = Match.objects.filter(tournament=tournament, status='completed').count()
         if total_matches > 0 and completed_matches >= total_matches:
-            # For cup group stage, generate knockout matches before completing
             if tournament.tournament_type == 'cup' and tournament.cup_type == 'group_stage':
                 _generate_group_stage_knockout(tournament)
             else:
                 Tournament.objects.filter(pk=tournament.pk).update(status='completed')
+
+
+def _update_form(current_form, result):
+    """Append result (W/D/L) to form string, keep last 5."""
+    form = (current_form or '') + result
+    return form[-5:]
+
+
+def _confirm_match_from_results(match, trusted_result):
+    """Auto-confirm a match when both players submitted identical scores."""
+    match.player_one_score = trusted_result.player_one_score
+    match.player_two_score = trusted_result.player_two_score
+    if trusted_result.player_one_score > trusted_result.player_two_score:
+        match.winner = match.player_one
+    elif trusted_result.player_two_score > trusted_result.player_one_score:
+        match.winner = match.player_two
+    else:
+        match.winner = None
+    match.status = 'completed'
+    match.verification_status = 'approved'
+    match.save()
+
+    # Mark all submissions as confirmed
+    MatchResult.objects.filter(match=match).update(status='confirmed')
+
+    # Update standings
+    _update_match_results(match)
 
 
 # ============================================================================
@@ -525,6 +573,13 @@ class MatchListCreateView(APIView):
         return Response(serializer.data)
 
     def post(self, request):
+        tournament_id = request.data.get('tournament')
+        if tournament_id:
+            existing = Match.objects.filter(tournament_id=tournament_id).exists()
+            if existing:
+                return Response({
+                    'message': 'Matches already exist for this tournament. Auto-generated matches cannot be duplicated. Use PATCH to update match results instead.'
+                }, status=status.HTTP_400_BAD_REQUEST)
         serializer = MatchSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         match = serializer.save()
@@ -550,21 +605,28 @@ class MatchDetailView(APIView):
         match = self.get_object(pk)
         if not match:
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        allowed_fields = {'verification_status'}
+        incoming_fields = set(request.data.keys())
+        if not incoming_fields.issubset(allowed_fields):
+            return Response({
+                'message': 'Direct match score changes are not allowed. Players submit results via /submit-result/ and admins verify via /verify/.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = MatchSerializer(match, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        old_status = match.status
         match = serializer.save()
-
-        # If match just became completed, update league standings and tournament status
-        if old_status != 'completed' and match.status == 'completed':
-            _update_match_results(match)
-
         return Response(MatchSerializer(match).data)
 
     def delete(self, request, pk):
         match = self.get_object(pk)
         if not match:
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if match.tournament.status in ('full', 'started', 'completed'):
+            return Response({
+                'message': 'Cannot delete matches for a tournament that is already full, started, or completed. Matches were auto-generated.'
+            }, status=status.HTTP_403_FORBIDDEN)
         match.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -585,6 +647,220 @@ class TournamentStandingsView(APIView):
         ).select_related('user').order_by('-points', '-won')
         serializer = TournamentStandingSerializer(standings, many=True)
         return Response(serializer.data)
+
+
+# ============================================================================
+# PLAYER MATCH RESULT SUBMISSION
+# ============================================================================
+
+class PlayerMatchResultSubmitView(APIView):
+    """
+    POST - Player submits the result for a match they played in.
+    Body: { "player_one_score": 3, "player_two_score": 2, "screenshot": <file> }
+    Scores are absolute (player_one_score = score of match.player_one).
+    If both players submit identical scores, the match is auto-confirmed.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, match_pk):
+        try:
+            match = Match.objects.select_related('tournament', 'player_one', 'player_two').get(pk=match_pk)
+        except Match.DoesNotExist:
+            return Response({'message': 'Match not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Only the two players in the match can submit
+        if request.user not in (match.player_one, match.player_two):
+            return Response({
+                'message': 'Only players in this match can submit a result.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Prevent duplicate submission
+        if MatchResult.objects.filter(match=match, submitted_by=request.user).exists():
+            return Response({
+                'message': 'You have already submitted a result for this match.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        screenshot = request.FILES.get('screenshot')
+        if not screenshot:
+            return Response({
+                'message': 'Screenshot is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        player_one_score = request.data.get('player_one_score')
+        player_two_score = request.data.get('player_two_score')
+
+        try:
+            player_one_score = int(player_one_score)
+            player_two_score = int(player_two_score)
+        except (TypeError, ValueError):
+            return Response({
+                'message': 'player_one_score and player_two_score must be integers.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if player_one_score < 0 or player_two_score < 0:
+            return Response({
+                'message': 'Scores cannot be negative.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        result = MatchResult.objects.create(
+            match=match,
+            submitted_by=request.user,
+            player_one_score=player_one_score,
+            player_two_score=player_two_score,
+            screenshot=screenshot,
+            status='pending',
+        )
+
+        # Check if both players have submitted
+        submissions = MatchResult.objects.filter(match=match)
+        if submissions.count() >= 2:
+            sub_list = list(submissions)
+            s1, s2 = sub_list[0], sub_list[1]
+            # Auto-confirm if both players submitted identical scores
+            if (s1.player_one_score == s2.player_one_score and
+                    s1.player_two_score == s2.player_two_score):
+                _confirm_match_from_results(match, s1)
+                return Response({
+                    'message': 'Result submitted and auto-confirmed (both players agreed).',
+                    'result_id': str(result.id),
+                    'match_status': match.status,
+                }, status=status.HTTP_201_CREATED)
+
+        return Response({
+            'message': 'Result submitted. Waiting for opponent to submit.',
+            'result_id': str(result.id),
+        }, status=status.HTTP_201_CREATED)
+
+
+class PlayerMatchResultListView(APIView):
+    """
+    GET - List result submissions for a match (current player's own + opponent's).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, match_pk):
+        try:
+            match = Match.objects.get(pk=match_pk)
+        except Match.DoesNotExist:
+            return Response({'message': 'Match not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if request.user not in (match.player_one, match.player_two):
+            return Response({
+                'message': 'Only players in this match can view results.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        results = MatchResult.objects.filter(match=match).select_related('submitted_by')
+        serializer = MatchResultSerializer(results, many=True)
+        return Response(serializer.data)
+
+
+# ============================================================================
+# ADMIN MATCH RESULT VERIFICATION
+# ============================================================================
+
+class AdminPendingResultsView(APIView):
+    """
+    GET - Admin: list all pending/unverified match results across tournaments.
+    Query params: ?tournament=<id>
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request):
+        tournament_id = request.query_params.get('tournament')
+        results = MatchResult.objects.filter(
+            status='pending'
+        ).select_related('match', 'submitted_by', 'match__player_one', 'match__player_two')
+        if tournament_id:
+            results = results.filter(match__tournament_id=tournament_id)
+        results = results.order_by('-submitted_at')
+        serializer = MatchResultSerializer(results, many=True)
+        return Response(serializer.data)
+
+
+class AdminVerifyResultView(APIView):
+    """
+    PATCH - Admin: verify/reject a match result using screenshots.
+    Body: {
+      "action": "approve" | "reject",
+      "submission_id": "<uuid of the MatchResult to trust>",
+      "notes": "optional admin note"
+    }
+    When approving: the Match is updated with the chosen submission's scores,
+    winner is set, verification_status='approved', standings updated.
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def patch(self, request, match_pk):
+        try:
+            match = Match.objects.select_related('tournament', 'player_one', 'player_two').get(pk=match_pk)
+        except Match.DoesNotExist:
+            return Response({'message': 'Match not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if match.verification_status != 'pending':
+            return Response({
+                'message': f'Match already {match.verification_status}.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        action = request.data.get('action')
+        submission_id = request.data.get('submission_id')
+
+        if action not in ('approve', 'reject'):
+            return Response({
+                'message': 'action must be "approve" or "reject".'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        submissions = MatchResult.objects.filter(match=match)
+
+        if action == 'approve':
+            if not submission_id:
+                return Response({
+                    'message': 'submission_id is required to approve.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                trusted = submissions.get(pk=submission_id)
+            except MatchResult.DoesNotExist:
+                return Response({
+                    'message': 'Submission not found.'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Apply the trusted submission's scores to the match
+            match.player_one_score = trusted.player_one_score
+            match.player_two_score = trusted.player_two_score
+            if trusted.player_one_score > trusted.player_two_score:
+                match.winner = match.player_one
+            elif trusted.player_two_score > trusted.player_one_score:
+                match.winner = match.player_two
+            else:
+                match.winner = None
+            match.status = 'completed'
+            match.verification_status = 'approved'
+            match.approved_by = request.user
+            match.approved_at = timezone.now()
+            match.save()
+
+            # Mark all submissions for this match
+            submissions.update(status='confirmed')
+
+            # Update standings
+            _update_match_results(match)
+
+            return Response({
+                'message': 'Match result approved and standings updated.',
+                'match_id': str(match.id),
+                'verification_status': match.verification_status,
+            }, status=status.HTTP_200_OK)
+
+        else:  # reject
+            # Reject all pending submissions for this match
+            submissions.update(status='rejected')
+            match.verification_status = 'rejected'
+            match.save()
+
+            return Response({
+                'message': 'Match result rejected. Players must resubmit.',
+                'match_id': str(match.id),
+                'verification_status': match.verification_status,
+            }, status=status.HTTP_200_OK)
 
 
 # ============================================================================
@@ -667,12 +943,31 @@ def notify_tournament_full(tournament_id):
             except Exception:
                 pass  # Don't fail if email fails
 
-        # Create in-app notifications (could be stored in a Notification model)
-        # For now, we log the notification
+
         print(f'Notified {registrations.count()} players that tournament {tournament.name} is full')
 
     except Exception as e:
         print(f'Error notifying players: {e}')
+
+
+class PlayerTournamentStandingsView(APIView):
+    """
+    GET - Player-facing: view their own standings in a tournament
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, tournament_pk):
+        try:
+            tournament = Tournament.objects.get(pk=tournament_pk)
+        except Tournament.DoesNotExist:
+            return Response({'message': 'Tournament not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        standings = TournamentStanding.objects.filter(
+            tournament=tournament, user=request.user
+        ).select_related('user').order_by('-points', '-won')
+
+        serializer = TournamentStandingSerializer(standings, many=True)
+        return Response(serializer.data)
 
 
 # ============================================================================
