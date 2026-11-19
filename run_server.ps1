@@ -33,6 +33,10 @@ if ($installBack) {
 Write-Host "Starting Django on http://127.0.0.1:8000" -ForegroundColor Green
 Start-Process powershell -ArgumentList "-NoExit","-Command","cd `"$backend`"; & `"$python`" manage.py runserver 127.0.0.1:8000"
 
+# Start django-q2 worker (background task processor)
+Write-Host "Starting Django Q2 worker..." -ForegroundColor Green
+Start-Process powershell -ArgumentList "-NoExit","-Command","cd `"$backend`"; & `"$python`" manage.py qcluster"
+
 # Frontend
 Pop-Location
 $frontend = Join-Path $root "frontend"
@@ -47,4 +51,4 @@ if (-not (Test-Path "node_modules")) {
 
 Write-Host "Starting Next.js on http://localhost:3000" -ForegroundColor Green
 Start-Process powershell -ArgumentList "-NoExit","-Command","cd `"$frontend`"; npm run dev"
-Write-Host "Both servers launched in separate windows." -ForegroundColor Green
+Write-Host "All servers launched in separate windows." -ForegroundColor Green

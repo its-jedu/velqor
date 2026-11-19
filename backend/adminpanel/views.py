@@ -5,6 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from .permissions import IsAdminUser, IsModeratorOrAdmin
 from .serializers import (
     UserAdminSerializer, RoleSerializer, PermissionSerializer,
+)
+from tournaments.serializers import (
     GameSerializer, TournamentSerializer, TournamentRegistrationSerializer,
     MatchSerializer, TournamentStandingSerializer,
 )
@@ -21,55 +23,23 @@ from django.db.models.functions import TruncDate
 from datetime import timedelta
 from django.utils import timezone
 import resend
+from django_q.tasks import async_task
+from tournaments.models import (
+    Game, Tournament, TournamentRegistration, Match, TournamentStanding,
+)
+from tournaments.views import (
+    _generate_standings_and_matches, _update_match_results,
+    upload_image_to_r2,
+)
 
-# New admin-panel domain models
+# New admin-panel domain models (dashboard only)
 from .models import (
     Withdrawal, Dispute, FlaggedAccount, Deposit, Payout,
-    Game, Tournament, TournamentRegistration, Match, TournamentStanding,
 )
 
 
 # ============================================================================
-# R2 DIRECT UPLOAD
-# ============================================================================
-
-import boto3
-from botocore.client import Config
-
-R2_PUBLIC_BASE = settings.R2_PUBLIC_BASE
-
-
-def upload_image_to_r2(image_file, folder='tournament_covers'):
-    """Upload image file directly to Cloudflare R2, get back public URL."""
-    s3 = boto3.client(
-        's3',
-        endpoint_url=settings.AWS_S3_ENDPOINT_URL,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=settings.AWS_S3_REGION_NAME,
-        config=Config(signature_version='s3v4'),
-    )
-
-    key = f'{folder}/{image_file.name}'
-    image_file.seek(0)
-
-    s3.put_object(
-        Bucket=settings.AWS_STORAGE_BUCKET_NAME,
-        Key=key,
-        Body=image_file.read(),
-        ContentType=image_file.content_type or 'application/octet-stream',
-    )
-
-    return f'{R2_PUBLIC_BASE}/{key}'
-
-
-# ============================================================================
-# DASHBOARD & ANALYTICS (existing, kept unchanged)
-# ============================================================================
-
-
-# ============================================================================
-# DASHBOARD & ANALYTICS (existing, kept unchanged)
+# DASHBOARD & ANALYTICS
 # ============================================================================
 
 class AdminDashboardView(APIView):
@@ -146,7 +116,16 @@ class AdminDashboardView(APIView):
         ]
 
         recent_users = User.objects.select_related('role').order_by('-date_joined')[:5]
-        recent_users_data = UserAdminSerializer(recent_users, many=True).data
+        recent_users_data = [
+            {
+                'id': str(u.id),
+                'email': u.email,
+                'username': u.username,
+                'role': u.role.name if u.role else None,
+                'date_joined': u.date_joined.isoformat() if u.date_joined else None,
+            }
+            for u in recent_users
+        ]
 
         user_role_name = request.user.role.name if getattr(request.user, 'role', None) else None
 
@@ -319,7 +298,7 @@ class AnalyticsView(APIView):
 
 
 # ============================================================================
-# USERS / ROLES / PERMISSIONS CRUD (existing, kept unchanged)
+# USERS / ROLES / PERMISSIONS CRUD
 # ============================================================================
 
 class UserListCreateView(APIView):
@@ -496,64 +475,7 @@ class PermissionDetailView(APIView):
 
 
 # ============================================================================
-# GAME CRUD
-# ============================================================================
-
-class GameListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
-
-    def get(self, request):
-        games = Game.objects.all().order_by('name')
-        serializer = GameSerializer(games, many=True)
-        return Response(serializer.data)
-
-    def post(self, request):
-        serializer = GameSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        game = serializer.save()
-        return Response(GameSerializer(game).data, status=status.HTTP_201_CREATED)
-
-
-class GameDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
-
-    def get_object(self, pk):
-        try:
-            return Game.objects.get(pk=pk)
-        except Game.DoesNotExist:
-            return None
-
-    def get(self, request, pk):
-        game = self.get_object(pk)
-        if not game:
-            return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(GameSerializer(game).data)
-
-    def patch(self, request, pk):
-        game = self.get_object(pk)
-        if not game:
-            return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = GameSerializer(game, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        game = serializer.save()
-        return Response(GameSerializer(game).data)
-
-    def delete(self, request, pk):
-        game = self.get_object(pk)
-        if not game:
-            return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-        # Prevent deletion if tournaments reference this game
-        if game.tournaments.exists():
-            return Response(
-                {'message': 'Cannot delete game: tournaments reference it.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        game.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-# ============================================================================
-# TOURNAMENT CRUD
+# TOURNAMENT CRUD (delegated to tournaments app)
 # ============================================================================
 
 class TournamentListCreateView(APIView):
@@ -561,7 +483,6 @@ class TournamentListCreateView(APIView):
 
     def get(self, request):
         tournaments = Tournament.objects.select_related('game', 'created_by').order_by('-created_at')
-        # Optional filter by status
         status_filter = request.query_params.get('status')
         if status_filter:
             tournaments = tournaments.filter(status=status_filter)
@@ -586,8 +507,6 @@ class TournamentListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         try:
             tournament = serializer.save()
-        except DjangoValidationError as e:
-            return Response({'message': str(e.detail)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'message': f'Tournament creation failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(TournamentSerializer(tournament).data, status=status.HTTP_201_CREATED)
@@ -630,8 +549,6 @@ class TournamentDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         try:
             tournament = serializer.save()
-        except DjangoValidationError as e:
-            return Response({'message': str(e.detail)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'message': f'Tournament update failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(TournamentSerializer(tournament).data)
@@ -688,6 +605,14 @@ class TournamentStatusChangeView(APIView):
 
         tournament.status = new_status
         tournament.save()
+
+        # Auto-generate standings and matches when tournament becomes full
+        if new_status == 'full' and current_status != 'full':
+            _generate_standings_and_matches(tournament)
+
+        # Notify players via background task
+        if new_status == 'full':
+            async_task(notify_tournament_full, tournament.id)
 
         return Response({
             'message': f'Tournament status changed from {current_status} to {new_status}.',
@@ -751,7 +676,11 @@ class TournamentRegistrationListCreateView(APIView):
 
         # Auto-transition status
         if tournament.current_players >= tournament.max_players and tournament.status == 'open':
-            Tournament.objects.filter(pk=tournament.pk).update(status='full')
+            tournament.status = 'full'
+            tournament.save()
+            _generate_standings_and_matches(tournament)
+            # Notify players
+            async_task(notify_tournament_full, tournament.id)
 
         return Response(TournamentRegistrationSerializer(registration).data, status=status.HTTP_201_CREATED)
 
@@ -805,6 +734,13 @@ class MatchListCreateView(APIView):
         return Response(serializer.data)
 
     def post(self, request):
+        tournament_id = request.data.get('tournament')
+        if tournament_id:
+            existing = Match.objects.filter(tournament_id=tournament_id).exists()
+            if existing:
+                return Response({
+                    'message': 'Matches already exist for this tournament. Auto-generated matches cannot be duplicated. Use PATCH to update match results instead.'
+                }, status=status.HTTP_400_BAD_REQUEST)
         serializer = MatchSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         match = serializer.save()
@@ -830,67 +766,29 @@ class MatchDetailView(APIView):
         match = self.get_object(pk)
         if not match:
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        allowed_fields = {'verification_status'}
+        incoming_fields = set(request.data.keys())
+        if not incoming_fields.issubset(allowed_fields):
+            return Response({
+                'message': 'Direct match score changes are not allowed. Players submit results via /submit-result/ and admins verify via /verify/.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = MatchSerializer(match, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        old_status = match.status
         match = serializer.save()
-
-        # If match just became completed, update league standings and tournament status
-        if old_status != 'completed' and match.status == 'completed':
-            self._update_match_results(match)
-
         return Response(MatchSerializer(match).data)
-
-    def _update_match_results(self, match):
-        """Update player standings and tournament status when a match is completed."""
-        tournament = match.tournament
-        player_one = match.player_one
-        player_two = match.player_two
-        winner = match.winner
-
-        # Get or create standings for both players
-        standing_one, _ = TournamentStanding.objects.get_or_create(
-            tournament=tournament, user=player_one
-        )
-        standing_two, _ = TournamentStanding.objects.get_or_create(
-            tournament=tournament, user=player_two
-        )
-
-        # League points: win=3, draw=1, loss=0
-        if tournament.tournament_type == 'league':
-            standing_one.played += 1
-            standing_two.played += 1
-
-            if winner is None:
-                # Draw
-                standing_one.drawn += 1
-                standing_two.drawn += 1
-                standing_one.points += 1
-                standing_two.points += 1
-            elif winner == player_one:
-                standing_one.won += 1
-                standing_one.points += 3
-                standing_two.lost += 1
-            elif winner == player_two:
-                standing_two.won += 1
-                standing_two.points += 3
-                standing_one.lost += 1
-
-            standing_one.save()
-            standing_two.save()
-
-        # Auto-transition tournament status
-        if tournament.status == 'full' or tournament.status == 'open':
-            # Check if all matches are completed
-            total_matches = Match.objects.filter(tournament=tournament).count()
-            completed_matches = Match.objects.filter(tournament=tournament, status='completed').count()
-            if total_matches > 0 and completed_matches >= total_matches:
-                Tournament.objects.filter(pk=tournament.pk).update(status='completed')
 
     def delete(self, request, pk):
         match = self.get_object(pk)
         if not match:
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        # Prevent deletion of matches that belong to a tournament that has already
+        # been filled (auto-generated matches exist).
+        if match.tournament.status in ('full', 'started', 'completed'):
+            return Response({
+                'message': 'Cannot delete matches for a tournament that is already full, started, or completed. Matches were auto-generated.'
+            }, status=status.HTTP_403_FORBIDDEN)
         match.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -911,67 +809,3 @@ class TournamentStandingsView(APIView):
         ).select_related('user').order_by('-points', '-won')
         serializer = TournamentStandingSerializer(standings, many=True)
         return Response(serializer.data)
-
-
-# ============================================================================
-# PLAYER-FACING TOURNAMENT ENDPOINTS
-# ============================================================================
-
-class PlayerTournamentListView(APIView):
-    """
-    GET - List available tournaments for players (status='open' only)
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        tournaments = Tournament.objects.filter(
-            status='open'
-        ).select_related('game').order_by('start_date')
-        serializer = TournamentSerializer(tournaments, many=True)
-        return Response(serializer.data)
-
-
-class PlayerTournamentRegisterView(APIView):
-    """
-    POST - Player joins a tournament
-    """
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, tournament_pk):
-        try:
-            tournament = Tournament.objects.get(pk=tournament_pk)
-        except Tournament.DoesNotExist:
-            return Response({'message': 'Tournament not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        user = request.user
-
-        # Prevent double registration
-        if TournamentRegistration.objects.filter(tournament=tournament, user=user).exists():
-            return Response({'message': 'Already registered for this tournament.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Check tournament is open for registration
-        if tournament.status not in ('draft', 'open'):
-            return Response({'message': 'Tournament is not open for registration.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Check private join code if applicable
-        if tournament.join_type == 'private':
-            join_code = request.data.get('join_code')
-            if not join_code or join_code != tournament.join_code:
-                return Response({'message': 'Invalid or missing join code.'}, status=status.HTTP_403_FORBIDDEN)
-
-        # Check capacity
-        if tournament.current_players >= tournament.max_players:
-            return Response({'message': 'Tournament is full.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        registration = TournamentRegistration.objects.create(tournament=tournament, user=user)
-
-        # Increment current_players
-        Tournament.objects.filter(pk=tournament.pk).update(current_players=F('current_players') + 1)
-        tournament.refresh_from_db()
-
-        # Auto-transition status
-        if tournament.current_players >= tournament.max_players and tournament.status == 'open':
-            Tournament.objects.filter(pk=tournament.pk).update(status='full')
-
-        serializer = TournamentRegistrationSerializer(registration)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
