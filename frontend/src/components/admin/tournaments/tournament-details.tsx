@@ -317,9 +317,11 @@ export default function TournamentDetails({ tournamentId }: { tournamentId: stri
                 ))}
               </ol>
             </div>
-            <dl className="divide-y divide-border border-t border-border">
-              <Row>{null}</Row>
-            </dl>
+            {/* <dl className="divide-y divide-border border-t border-border">
+              <Row label="Format summary">
+  {summary.stages?.[0]?.title || "—"}
+</Row>
+            </dl> */}
           </Panel>
 
           <Panel title="Schedule" edit={editHref(3)}>

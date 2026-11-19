@@ -1,4 +1,4 @@
-import { ProfileContent } from '@/components/players/profile'
+import  ProfileContent  from '@/components/players/profile'
 
 export const metadata = {
   title: 'My Profile | Velqor',

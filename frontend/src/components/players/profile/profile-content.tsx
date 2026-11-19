@@ -2,21 +2,52 @@
 
 import { useAuth } from '@/contexts/AuthContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Trophy, Medal, Award, TrendingUp, Calendar, User, Mail, Phone } from 'lucide-react'
+import { Trophy, Medal, Award, TrendingUp, Calendar, User, Mail } from 'lucide-react'
 
 export function ProfileContent() {
   const { user } = useAuth()
 
   if (!user) return null
 
+  const statsData = user.stats ?? {
+    totalMatches: 0,
+    wins: 0,
+    losses: 0,
+    totalWinnings: 0,
+    tournamentsWon: 0,
+  }
+
   const stats = [
-    { label: "Total Matches", value: user.stats.totalMatches, icon: TrendingUp },
-    { label: "Wins", value: user.stats.wins, icon: Trophy },
-    { label: "Losses", value: user.stats.losses, icon: Medal },
-    { label: "Win Rate", value: `${user.stats.totalMatches > 0 ? Math.round((user.stats.wins / user.stats.totalMatches) * 100) : 0}%`, icon: Award },
-    { label: "Total Winnings", value: `₦${user.stats.totalWinnings.toLocaleString()}`, icon: TrendingUp },
-    { label: "Tournaments Won", value: user.stats.tournamentsWon, icon: Trophy },
+    { label: "Total Matches", value: statsData.totalMatches, icon: TrendingUp },
+    { label: "Wins", value: statsData.wins, icon: Trophy },
+    { label: "Losses", value: statsData.losses, icon: Medal },
+    {
+      label: "Win Rate",
+      value: `${
+        statsData.totalMatches > 0
+          ? Math.round((statsData.wins / statsData.totalMatches) * 100)
+          : 0
+      }%`,
+      icon: Award,
+    },
+    {
+      label: "Total Winnings",
+      value: `₦${statsData.totalWinnings.toLocaleString()}`,
+      icon: TrendingUp,
+    },
+    { label: "Tournaments Won", value: statsData.tournamentsWon, icon: Trophy },
   ]
+
+  const displayName =
+    user.fullName ||
+    `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+    user.username
+
+  const memberSince = user.createdAt
+    ? new Date(user.createdAt).toLocaleDateString()
+    : user.date_joined
+    ? new Date(user.date_joined).toLocaleDateString()
+    : "—"
 
   return (
     <div className="space-y-6">
@@ -30,14 +61,18 @@ export function ProfileContent() {
               </span>
             </div>
             <div className="flex-1 text-center md:text-left">
-              <h1 className="text-2xl font-bold">{user.fullName}</h1>
+              <h1 className="text-2xl font-bold">{displayName}</h1>
               <p className="text-foreground/60">@{user.username}</p>
               <div className="flex flex-wrap gap-2 mt-2 justify-center md:justify-start">
                 <span className="text-xs px-2 py-1 rounded-full bg-primary/20 text-primary">
                   {user.role}
                 </span>
                 <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-500">
-                  {user.isActive ? 'Active' : 'Inactive'}
+                  {user.isActive !== undefined
+                    ? user.isActive
+                      ? "Active"
+                      : "Inactive"
+                    : "Active"}
                 </span>
               </div>
             </div>
@@ -69,7 +104,7 @@ export function ProfileContent() {
             <Calendar className="w-5 h-5 text-foreground/60" />
             <div>
               <p className="text-sm text-foreground/60">Member Since</p>
-              <p className="font-semibold">{new Date(user.createdAt).toLocaleDateString()}</p>
+              <p className="font-semibold">{memberSince}</p>
             </div>
           </div>
         </CardContent>

@@ -1,139 +1,103 @@
 "use client"
 
-import { motion } from "framer-motion"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Calendar, Users, DollarSign } from "lucide-react"
+import { useState } from "react"
 import Image from "next/image"
+import Link from "next/link"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  formatNaira,
+  getPrizePool,
+  tournaments,
+  type TournamentStatus,
+} from "@/components/landing-page/data"
 
-// Calculate prize pool as 30% of (entry fee × number of players)
-// Entry fee in Naira (converted from string to number for calculation)
-const tournaments = [
-  {
-    id: 1,
-    title: "eFootball Champions League",
-    game: "eFootball",
-    image: "https://images.unsplash.com/photo-1612287230202-1ff1d85d1bdf?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-    entryFee: 5000,
-    players: 128,
-    date: "Mar 15, 2024",
-  },
-  {
-    id: 2,
-    title: "COD: Modern Warfare Cup",
-    game: "Call of Duty",
-    image: "https://images.unsplash.com/photo-1542751110-97427bbecf20?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-    entryFee: 10000,
-    players: 64,
-    date: "Mar 20, 2024",
-  },
-  {
-    id: 3,
-    title: "8Ball Pool Masters",
-    game: "8Ball Pool",
-    image: "https://images.pexels.com/photos/1263349/pexels-photo-1263349.jpeg?auto=compress&cs=tinysrgb&w=800",
-    entryFee: 3000,
-    players: 256,
-    date: "Mar 25, 2024",
-  },
-].map(tournament => ({
-  ...tournament,
-  entryFeeFormatted: `₦${tournament.entryFee.toLocaleString()}`,
-  prizePool: tournament.entryFee * tournament.players * 0.3,
-  prizePoolFormatted: `₦${(tournament.entryFee * tournament.players * 0.3).toLocaleString()}`,
-}))
+const tabs = ["All", "eFootball", "Call of Duty", "8Ball Pool"] as const
+
+const statusStyle: Record<TournamentStatus, { label: string; className: string }> = {
+  open: { label: "Open", className: "bg-emerald-500 text-white hover:bg-emerald-500" },
+  filling: { label: "Filling fast", className: "bg-amber-500 text-black hover:bg-amber-500" },
+  live: { label: "Live now", className: "bg-red-500 text-white hover:bg-red-500" },
+}
 
 export default function TournamentPreview() {
+  const [tab, setTab] = useState<(typeof tabs)[number]>("All")
+  const list = tournaments.filter((t) => tab === "All" || t.game === tab)
+
   return (
-    <section id="tournaments" className="py-24 bg-gradient-to-t from-background to-primary/5">
+    <section id="tournaments" className="bg-muted/40 py-20 lg:py-28">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          viewport={{ once: true }}
-          className="text-center mb-16"
-        >
-          <h2 className="text-4xl font-bold mb-4 bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
-            Featured Tournaments
-          </h2>
-          <p className="text-foreground/60 max-w-2xl mx-auto">
-            Join these exciting tournaments and compete for massive prize pools
-          </p>
-        </motion.div>
+        <div className="mb-8 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-2xl">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Tournaments you can join today</h2>
+            <p className="mt-3 text-muted-foreground">
+              Entry fees and prize pools are shown upfront, so you know what you&apos;re playing for.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <Tabs value={tab} onValueChange={(v) => setTab(v as (typeof tabs)[number])}>
+              <TabsList>
+                {tabs.map((t) => (
+                  <TabsTrigger key={t} value={t}>
+                    {t}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {tournaments.map((tournament, index) => (
-            <motion.div
-              key={tournament.id}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: index * 0.1 }}
-              viewport={{ once: true }}
-              whileHover={{ y: -10 }}
-              className="group"
-            >
-              <Card className="overflow-hidden bg-gradient-to-br from-card/50 to-card border-primary/20 hover:border-primary/40 transition-all duration-300">
-                <div className="relative h-48 overflow-hidden">
-                  <Image
-                    src={tournament.image}
-                    alt={tournament.title}
-                    fill
-                    className="object-cover group-hover:scale-110 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                  <div className="absolute top-4 right-4 bg-primary/90 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-semibold text-white">
-                    {tournament.entryFeeFormatted}
-                  </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {list.map((t) => {
+            const status = statusStyle[t.status]
+            const full = t.joined >= t.slots
+            return (
+              <Card key={t.id} className="overflow-hidden py-0">
+                <div className="relative h-40">
+                  <Image src={t.image} alt="" fill sizes="(min-width: 1024px) 33vw, 100vw" className="object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                  <Badge className={`absolute left-4 top-4 ${status.className}`}>{status.label}</Badge>
+                  <Badge variant="secondary" className="absolute right-4 top-4">
+                    {t.format}
+                  </Badge>
                 </div>
-                <CardContent className="p-6">
-                  <h3 className="text-xl font-semibold mb-2">{tournament.title}</h3>
-                  <p className="text-foreground/60 text-sm mb-4">{tournament.game}</p>
-                  
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 text-foreground/60">
-                        <DollarSign className="w-4 h-4" />
-                        <span>Prize Pool</span>
-                      </div>
-                      <span className="font-semibold text-primary">{tournament.prizePoolFormatted}</span>
+                <CardContent className="space-y-4 p-5">
+                  <div>
+                    <h3 className="text-lg font-semibold">{t.title}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {t.game} · {t.startsLabel}
+                    </p>
+                  </div>
+
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Prize pool</p>
+                      <p className="text-2xl font-bold text-primary">{formatNaira(getPrizePool(t))}</p>
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 text-foreground/60">
-                        <Users className="w-4 h-4" />
-                        <span>Players</span>
-                      </div>
-                      <span>{tournament.players.toLocaleString()}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 text-foreground/60">
-                        <Calendar className="w-4 h-4" />
-                        <span>Date</span>
-                      </div>
-                      <span>{tournament.date}</span>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Entry fee</p>
+                      <p className="font-semibold">{formatNaira(t.entryFee)}</p>
                     </div>
                   </div>
 
-                  <Button className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 group-hover:scale-105 transition-transform duration-300 text-white">
-                    Join Tournament
+                  <div className="space-y-1.5">
+                    <Progress value={(t.joined / t.slots) * 100} className="h-1.5" />
+                    <p className="text-xs text-muted-foreground">
+                      {t.joined}/{t.slots} players joined
+                    </p>
+                  </div>
+
+                  <Button asChild={!full} disabled={full} className="w-full">
+                    {full ? <span>Tournament full</span> : <Link href="/auth/register">Join tournament</Link>}
                   </Button>
                 </CardContent>
               </Card>
-            </motion.div>
-          ))}
+            )
+          })}
         </div>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          viewport={{ once: true }}
-          className="text-center mt-12"
-        >
-          <Button variant="outline" size="lg" className="border-2">
-            View All Tournaments
-          </Button>
-        </motion.div>
       </div>
     </section>
   )

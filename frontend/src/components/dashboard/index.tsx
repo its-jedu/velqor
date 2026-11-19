@@ -23,7 +23,17 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <DashboardStats stats={user.stats} />
+       <DashboardStats
+  stats={{
+    totalMatches: user.stats?.totalMatches ?? 0,
+    wins: user.stats?.wins ?? 0,
+    losses: user.stats?.losses ?? 0,
+    totalWinnings: user.stats?.totalWinnings ?? 0,
+    tournamentsWon: user.stats?.tournamentsWon ?? 0,
+    draws: 0,
+tournamentsPlayed: 0,
+  }}
+/>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8 mb-8">
           <Card className="border-primary/20 bg-gradient-to-r from-primary/10 to-purple-600/10 cursor-pointer hover:scale-105 transition-transform">
@@ -63,7 +73,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <RecentMatches />
+        <RecentMatches matches={[]} />
       </div>
     </div>
   )

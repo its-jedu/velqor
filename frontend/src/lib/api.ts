@@ -10,6 +10,14 @@ export interface RegisterData {
   password_confirm: string
 }
 
+export interface UserStats {
+  totalMatches: number
+  wins: number
+  losses: number
+  totalWinnings: number
+  tournamentsWon: number
+}
+
 export interface User {
   id: string
   email: string
@@ -17,10 +25,16 @@ export interface User {
   first_name: string
   last_name: string
   phone_number?: string
-  role: string
+  role: "player" | "admin" | "moderator"
   is_email_verified: boolean
   date_joined: string
   last_login: string | null
+
+  // Added properties that your components are using
+  fullName?: string
+  isActive?: boolean
+  createdAt?: string
+  stats?: UserStats
 }
 
 export interface AuthResponse {
