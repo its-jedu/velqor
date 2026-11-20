@@ -1,9 +1,9 @@
 name = "velqor-frontend"
-compatibility_date = "2026-11-19"
+compatibility_date = "2026-11-20"
 
 [pages]
 build_command = "pnpm build"
-build_output_directory = ".vr"
+pages_build_output_dir = ".next"
 
 [vars]
 NEXT_PUBLIC_API_URL = ""

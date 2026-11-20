@@ -1,4 +1,3 @@
-import { withNextOnPages } from "@cloudflare/next-on-pages/next-experimental"
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
@@ -16,4 +15,4 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default withNextOnPages(nextConfig)
+export default nextConfig
