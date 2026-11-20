@@ -4,6 +4,10 @@ export const metadata = {
   title: "Tournament | Velqor Admin",
 }
 
+export function generateStaticParams() {
+  return []
+}
+
 export default async function TournamentDetailsPage({
   params,
 }: {

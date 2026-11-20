@@ -5,6 +5,10 @@ export const metadata = {
   description: "View transaction details",
 }
 
+export function generateStaticParams() {
+  return []
+}
+
 export default function TransactionDetailPage() {
   return <TransactionDetail />
 }

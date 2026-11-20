@@ -5,6 +5,10 @@ export const metadata = {
   description: "View and manage user account details",
 };
 
+export function generateStaticParams() {
+  return []
+}
+
 export default function UserDetailsPage() {
   return <UserDetails />;
 }
