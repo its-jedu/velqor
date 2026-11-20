@@ -5,7 +5,7 @@ export const metadata = {
 }
 
 export function generateStaticParams() {
-  return []
+  return [{ id: "0" }]
 }
 
 export default async function TournamentDetailsPage({
