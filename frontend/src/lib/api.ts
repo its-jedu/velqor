@@ -63,6 +63,62 @@ export interface AdminUser {
   last_login: string | null
 }
 
+export interface AdminAnalytics {
+  kpis: {
+    total_users: number
+    active_tournaments: number
+    total_volume: number
+    active_players: number
+    pending_withdrawals: number
+    completed_withdrawals: number
+    open_disputes: number
+    flagged_accounts: number
+    results_to_confirm: number
+    upcoming_tournaments: number
+    completed_tournaments: number
+    total_deposits: number
+    total_payouts: number
+  }
+  charts: {
+    user_growth_last_30_days: { date: string; count: number }[]
+    // Shapes below are guesses, since the arrays were empty in your sample
+    deposit_volume_last_30_days: { date: string; amount: number }[]
+    tournament_distribution: { status: string; count: number }[]
+  }
+  top_players: unknown[]
+  recent_signups: {
+    id: string
+    email: string
+    username: string
+    role: string
+    date_joined: string
+  }[]
+}
+
+export interface AdminDashboard {
+  stats: {
+    total_users: number
+    active_users: number
+    verified_users: number
+    pending_withdrawals: number
+    open_disputes: number
+    flagged_accounts: number
+    results_to_confirm: number
+  }
+  charts: {
+    registrations_last_30_days: { date: string; count: number }[]
+    deposits_vs_payouts: unknown[] // empty in your sample, shape unknown
+  }
+  recent_signups: {
+    id: string
+    email: string
+    username: string
+    role: string
+    date_joined: string
+    is_email_verified: boolean
+  }[]
+}
+
 export interface CreateAdminUserData {
   email: string
   username: string
@@ -387,7 +443,14 @@ async resetPassword(
     return this.request('/admin/dashboard/stats/', { method: 'GET' })
   }
 
+  // Admin → analytics
+  async adminAnalytics(): Promise<AdminAnalytics> {
+    return this.request('/admin/analytics/', { method: 'GET' })
+  }
 
+    async adminDashboard(): Promise<AdminDashboard> {
+    return this.request('/admin/dashboard/', { method: 'GET' })
+  }
 
   // Wallet endpoints
   async getWalletBalance() {
