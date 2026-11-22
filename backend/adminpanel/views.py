@@ -475,6 +475,28 @@ class PermissionDetailView(APIView):
 
 
 # ============================================================================
+# GAME CRUD
+# ============================================================================
+
+class GameListCreateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request):
+        games = Game.objects.all().order_by('name')
+        serializer = GameSerializer(games, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = GameSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            game = serializer.save()
+        except Exception as e:
+            return Response({'message': f'Game creation failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(GameSerializer(game).data, status=status.HTTP_201_CREATED)
+
+
+# ============================================================================
 # TOURNAMENT CRUD (delegated to tournaments app)
 # ============================================================================
 

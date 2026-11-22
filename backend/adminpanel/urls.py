@@ -14,8 +14,14 @@ from .views import (
     MatchListCreateView,
     MatchDetailView,
     TournamentStandingsView,
+    GameListCreateView,
 )
-from tournaments.views import AdminPendingResultsView, AdminVerifyResultView
+from tournaments.views import (
+    AdminPendingResultsView, AdminVerifyResultView,
+    GameDetailView,
+    TournamentRegistrationListCreateView,
+    TournamentRegistrationDetailView,
+)
 
 urlpatterns = [
     path('dashboard/', AdminDashboardView.as_view(), name='admin-dashboard'),
@@ -29,10 +35,18 @@ urlpatterns = [
     path('permissions/', PermissionListCreateView.as_view(), name='permission-list-create'),
     path('permissions/<int:pk>/', PermissionDetailView.as_view(), name='permission-detail'),
 
+    # Games
+    path('games/', GameListCreateView.as_view(), name='game-list-create'),
+    path('games/<uuid:pk>/', GameDetailView.as_view(), name='game-detail'),
+
     # Tournaments
     path('tournaments/', TournamentListCreateView.as_view(), name='tournament-list-create'),
     path('tournaments/<uuid:pk>/', TournamentDetailView.as_view(), name='tournament-detail'),
     path('tournaments/<uuid:pk>/status/', TournamentStatusChangeView.as_view(), name='tournament-status-change'),
+
+    # Registrations (admin)
+    path('registrations/', TournamentRegistrationListCreateView.as_view(), name='registration-list-create'),
+    path('registrations/<uuid:pk>/', TournamentRegistrationDetailView.as_view(), name='registration-detail'),
 
     # Matches (admin only)
     path('matches/', MatchListCreateView.as_view(), name='match-list-create'),
