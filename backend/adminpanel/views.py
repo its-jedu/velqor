@@ -2,7 +2,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from .permissions import IsAdminUser, IsModeratorOrAdmin
+from .permissions import (
+    IsAdminUser, IsModeratorOrAdmin, perm,
+)
 from .serializers import (
     UserAdminSerializer, RoleSerializer, PermissionSerializer,
 )
@@ -45,7 +47,7 @@ from .models import (
 
 class AdminDashboardView(APIView):
     """Admin home dashboard — high-level counts and activity charts."""
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('view_dashboard')]
 
     def get(self, request):
         now = timezone.now()
@@ -154,7 +156,7 @@ class AdminDashboardView(APIView):
 
 
 class ModeratorDashboardView(APIView):
-    permission_classes = [IsAuthenticated, IsModeratorOrAdmin]
+    permission_classes = [IsAuthenticated, perm('view_dashboard')]
 
     def get(self, request):
         return Response({
@@ -165,8 +167,8 @@ class ModeratorDashboardView(APIView):
 
 
 class AnalyticsView(APIView):
-    """Admin analytics / KPI page — zero N+1 queries."""
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    """Admin analytics / KPI page """
+    permission_classes = [IsAuthenticated, perm('view_analytics')]
 
     def get(self, request):
         now = timezone.now()
@@ -303,7 +305,10 @@ class AnalyticsView(APIView):
 # ============================================================================
 
 class UserListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAuthenticated(), perm('create_admin_users')]
+        return [IsAuthenticated(), perm('manage_users')]
 
     def get(self, request):
         users = User.objects.select_related('role').order_by('-date_joined')
@@ -354,7 +359,7 @@ class UserListCreateView(APIView):
 
 
 class UserDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_users')]
 
     def get_object(self, pk):
         try:
@@ -386,7 +391,7 @@ class UserDetailView(APIView):
 
 
 class RoleListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_roles')]
 
     def get(self, request):
         roles = Role.objects.all()
@@ -400,7 +405,7 @@ class RoleListCreateView(APIView):
 
 
 class RoleDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_roles')]
 
     def get_object(self, pk):
         try:
@@ -432,7 +437,7 @@ class RoleDetailView(APIView):
 
 
 class PermissionListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_permissions')]
 
     def get(self, request):
         perms = Permission.objects.prefetch_related('roles')
@@ -446,7 +451,7 @@ class PermissionListCreateView(APIView):
 
 
 class PermissionDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_permissions')]
 
     def get_object(self, pk):
         try:
@@ -482,7 +487,7 @@ class PermissionDetailView(APIView):
 # ============================================================================
 
 class GameListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_games')]
 
     def get(self, request):
         games = Game.objects.all().order_by('name')
@@ -504,7 +509,10 @@ class GameListCreateView(APIView):
 # ============================================================================
 
 class TournamentListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAuthenticated(), perm('create_tournaments')]
+        return [IsAuthenticated(), perm('manage_tournaments')]
 
     def get(self, request):
         tournaments = Tournament.objects.select_related('game', 'created_by').order_by('-created_at')
@@ -538,7 +546,7 @@ class TournamentListCreateView(APIView):
 
 
 class TournamentDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_tournaments')]
 
     def get_object(self, pk):
         try:
@@ -593,10 +601,10 @@ class TournamentDetailView(APIView):
 
 class TournamentStatusChangeView(APIView):
     """
-    PATCH - Change tournament status (admin only)
+    PATCH - Change tournament status
     Body: { "status": "open" | "full" | "started" | "completed" | "draft" }
     """
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_tournaments')]
 
     def patch(self, request, pk):
         try:
@@ -651,18 +659,15 @@ class TournamentStatusChangeView(APIView):
 
 class TournamentRegistrationListCreateView(APIView):
     """
-    GET  - admin: list all registrations
+    GET  - admin/moderator: list all registrations (manage_tournament_players)
     POST - player: join a tournament (authenticated)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated(), perm('manage_tournament_players')]
+        return [IsAuthenticated()]
 
     def get(self, request):
-        # Only admins can list all registrations
-        role = getattr(request.user, 'role', None)
-        role_name = role.name if role else None
-        if role_name != 'admin':
-            return Response({'message': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
-
         tournament_id = request.query_params.get('tournament')
         registrations = TournamentRegistration.objects.select_related('tournament', 'user').order_by('-joined_at')
         if tournament_id:
@@ -725,7 +730,12 @@ class TournamentRegistrationDetailView(APIView):
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         role = getattr(request.user, 'role', None)
         role_name = role.name if role else None
-        if role_name != 'admin' and reg.user != request.user:
+        # Admin/moderator with manage_tournament_players can view any registration
+        if role_name in ('superadmin', 'admin'):
+            pass
+        elif role_name == 'moderator' and role and role.permissions.filter(code='manage_tournament_players').exists():
+            pass
+        elif reg.user != request.user:
             return Response({'message': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
         return Response(TournamentRegistrationSerializer(reg).data)
 
@@ -735,7 +745,11 @@ class TournamentRegistrationDetailView(APIView):
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         role = getattr(request.user, 'role', None)
         role_name = role.name if role else None
-        if role_name != 'admin' and reg.user != request.user:
+        if role_name in ('superadmin', 'admin'):
+            pass
+        elif role_name == 'moderator' and role and role.permissions.filter(code='manage_tournament_players').exists():
+            pass
+        elif reg.user != request.user:
             return Response({'message': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
         # Decrement current_players
         Tournament.objects.filter(pk=reg.tournament.pk).update(current_players=F('current_players') - 1)
@@ -748,7 +762,7 @@ class TournamentRegistrationDetailView(APIView):
 # ============================================================================
 
 class MatchListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_matches')]
 
     def get(self, request):
         tournament_id = request.query_params.get('tournament')
@@ -773,7 +787,7 @@ class MatchListCreateView(APIView):
 
 
 class MatchDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, perm('manage_matches')]
 
     def get_object(self, pk):
         try:
@@ -808,8 +822,7 @@ class MatchDetailView(APIView):
         match = self.get_object(pk)
         if not match:
             return Response({'message': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-        # Prevent deletion of matches that belong to a tournament that has already
-        # been filled (auto-generated matches exist).
+
         if match.tournament.status in ('full', 'started', 'completed'):
             return Response({
                 'message': 'Cannot delete matches for a tournament that is already full, started, or completed. Matches were auto-generated.'
@@ -822,7 +835,7 @@ class TournamentStandingsView(APIView):
     """
     GET - List standings for a tournament (?tournament=<id>)
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, perm('view_standings')]
 
     def get(self, request):
         tournament_id = request.query_params.get('tournament')
