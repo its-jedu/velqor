@@ -117,7 +117,14 @@ class IsOwnerOrAdmin(BasePermission):
 
 
 def perm(code):
-    """Factory: returns a HasPermission instance with the given code set."""
+    """Factory: returns a HasPermission class with the given code set.
+    
+    Usage in views:
+        permission_classes = [IsAuthenticated, perm('manage_tournaments')]
+    
+    DRF instantiates permission classes automatically, so we return the class
+    itself, not an instance.
+    """
     class _Perm(HasPermission):
         required_permission_code = code
-    return _Perm()
+    return _Perm

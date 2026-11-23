@@ -142,7 +142,8 @@ class ResetPasswordView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        setup_token = request.data.get('setup_token')
+        # setup_token can come from POST body or URL query parameter (email link)
+        setup_token = request.data.get('setup_token') or request.query_params.get('setup_token')
         new_password = request.data.get('new_password')
         new_password_confirm = request.data.get('new_password_confirm')
 

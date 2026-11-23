@@ -1,0 +1,46 @@
+Permissions & Roles System — Implemented
+12 Permissions Seeded
+Code	Description
+manage_tournaments	View and update existing tournaments
+create_tournaments	Create new tournaments
+view_standings	View tournament standings
+manage_tournament_players	Manage registrations and players in a tournament
+manage_matches	Manage match results and verification
+manage_users	Create, edit, and delete users
+create_admin_users	Create users with admin/superadmin role
+manage_roles	Create and edit roles
+manage_permissions	Assign permissions to roles
+manage_games	Create and edit games
+view_analytics	View admin analytics
+view_dashboard	View admin dashboard
+4 Roles
+Role	Permissions
+superadmin	All 12 permissions
+admin	All 12 permissions (backward compat alias)
+moderator	manage_tournaments, view_standings, manage_tournament_players
+player	None
+How It Works
+- HasPermission('code') → replaced with perm('code') factory that returns a permission class checking the user's role → permissions M2M relationship
+- superadmin / admin roles bypass all permission checks automatically
+- moderator can only access views requiring their 3 permissions; everything else returns 403
+- is_superuser (Django flag) also bypasses all checks
+View-Level Permission Mapping
+View	GET Permission	POST/PATCH/PATCH/DELETE Permission
+Dashboard	view_dashboard	—
+Analytics	view_analytics	—
+Users list	manage_users	create_admin_users
+User detail	manage_users	manage_users
+Roles	manage_roles	manage_roles
+Permissions	manage_permissions	manage_permissions
+Games	manage_games	manage_games
+Tournaments list	manage_tournaments	create_tournaments
+Tournament detail	manage_tournaments	manage_tournaments
+Tournament status	manage_tournaments	manage_tournaments
+Registrations list	manage_tournament_players	(player: IsAuthenticated)
+Registration detail	inline check (mod/admin/owner)	inline check (mod/admin/owner)
+Matches	manage_matches	manage_matches
+Match detail	manage_matches	manage_matches
+Standings	view_standings	—
+Superadmin Can Assign Permissions
+A superadmin can use /api/v1/admin/permissions/ and /api/v1/admin/roles/ to assign any permission to any role — including giving a moderator create_tournaments if desired.
+Your existing IsAdminUser and IsModeratorOrAdmin classes are preserved for backward compatibility.

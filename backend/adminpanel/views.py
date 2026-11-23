@@ -307,8 +307,8 @@ class AnalyticsView(APIView):
 class UserListCreateView(APIView):
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsAuthenticated(), perm('create_admin_users')]
-        return [IsAuthenticated(), perm('manage_users')]
+            return [IsAuthenticated(), perm('create_admin_users')()]
+        return [IsAuthenticated(), perm('manage_users')()]
 
     def get(self, request):
         users = User.objects.select_related('role').order_by('-date_joined')
@@ -341,7 +341,7 @@ class UserListCreateView(APIView):
           <p style="text-align:center;margin:32px 0;">
             <a href="{reset_link}" style="background:#111827;color:#fff;text-decoration:none;padding:14px 24px;border-radius:8px;font-weight:600;">Set Password</a>
           </p>
-          <p style="color:#6b7280;font-size:13px;">Login with email: {user.email}<br/>This link can be used only once.</p>
+          <p style="color:#6b7280;font-size:13px;">Login with username: {user.username}<br/>This link can be used only once.</p>
         </div>
         """
         try:
@@ -511,8 +511,8 @@ class GameListCreateView(APIView):
 class TournamentListCreateView(APIView):
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsAuthenticated(), perm('create_tournaments')]
-        return [IsAuthenticated(), perm('manage_tournaments')]
+            return [IsAuthenticated(), perm('create_tournaments')()]
+        return [IsAuthenticated(), perm('manage_tournaments')()]
 
     def get(self, request):
         tournaments = Tournament.objects.select_related('game', 'created_by').order_by('-created_at')
@@ -664,7 +664,7 @@ class TournamentRegistrationListCreateView(APIView):
     """
     def get_permissions(self):
         if self.request.method == 'GET':
-            return [IsAuthenticated(), perm('manage_tournament_players')]
+            return [IsAuthenticated(), perm('manage_tournament_players')()]
         return [IsAuthenticated()]
 
     def get(self, request):
