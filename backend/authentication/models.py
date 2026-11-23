@@ -82,3 +82,19 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+
+
+class PasswordSetupToken(models.Model):
+    """One-time use, no-expiration token for admin password setup."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='setup_tokens')
+    token = models.CharField(max_length=255, unique=True)
+    is_used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Password Setup Token'
+        verbose_name_plural = 'Password Setup Tokens'
+
+    def __str__(self):
+        return f'{self.user.email}:{self.token[:8]}'

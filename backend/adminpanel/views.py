@@ -10,7 +10,7 @@ from tournaments.serializers import (
     GameSerializer, TournamentSerializer, TournamentRegistrationSerializer,
     MatchSerializer, TournamentStandingSerializer,
 )
-from authentication.models import User, Role, Permission
+from authentication.models import User, Role, Permission, PasswordSetupToken
 from authentication.permissions import RoleChoices
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
@@ -23,6 +23,7 @@ from django.db.models.functions import TruncDate
 from datetime import timedelta
 from django.utils import timezone
 import resend
+import secrets
 from django_q.tasks import async_task
 from tournaments.models import (
     Game, Tournament, TournamentRegistration, Match, TournamentStanding,
@@ -312,41 +313,43 @@ class UserListCreateView(APIView):
     def post(self, request):
         serializer = UserAdminSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        role_obj = serializer.validated_data.get('role')
-        role_name = role_obj.name if role_obj else None
-        if role_name == 'admin' and not request.user.is_superuser:
-            return Response({'message': 'Only superadmin can create admin users.'}, status=status.HTTP_403_FORBIDDEN)
-        admin_role, _ = Role.objects.get_or_create(name='admin')
-        serializer.validated_data['role'] = admin_role
+
+        # Always assign Moderator role on creation; superadmin can change later
+        moderator_role, _ = Role.objects.get_or_create(name='moderator')
+        serializer.validated_data['role'] = moderator_role
         serializer.validated_data['is_staff'] = True
+
         user = serializer.save()
-        if not user.has_usable_password():
-            uid = urlsafe_base64_encode(force_bytes(str(user.pk)))
-            token = default_token_generator.make_token(user)
-            reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?uid={uid}&token={token}"
-            subject = 'Your Velqor admin account has been created'
-            html = f"""
-            <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:40px auto;background:#fff;padding:32px;border-radius:12px;">
-              <h2 style="color:#1f2937;">Welcome to Velqor Admin</h2>
-              <p>Hi {user.first_name or user.email},</p>
-              <p>Your admin account has been created on Velqor.</p>
-              <p>Click the button below to set your password and login.</p>
-              <p style="text-align:center;margin:32px 0;">
-                <a href="{reset_link}" style="background:#111827;color:#fff;text-decoration:none;padding:14px 24px;border-radius:8px;font-weight:600;">Set Password</a>
-              </p>
-              <p style="color:#6b7280;font-size:13px;">Login with username: {user.username}<br/>This link expires in 1 hour.</p>
-            </div>
-            """
-            try:
-                resend.api_key = settings.RESEND_API_KEY
-                resend.Emails.send({
-                    "from": settings.DEFAULT_FROM_EMAIL,
-                    "to": [user.email],
-                    "subject": subject,
-                    "html": html,
-                })
-            except Exception:
-                pass
+
+        # Always send password-setup email with a one-time, no-expiration link
+        setup_token = secrets.token_urlsafe(32)
+        PasswordSetupToken.objects.create(user=user, token=setup_token)
+
+        reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?setup_token={setup_token}"
+        subject = 'Your Velqor admin account has been created'
+        html = f"""
+        <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:40px auto;background:#fff;padding:32px;border-radius:12px;">
+          <h2 style="color:#1f2937;">Welcome to Velqor Admin</h2>
+          <p>Hi {user.first_name or user.email},</p>
+          <p>Your admin account has been created on Velqor.</p>
+          <p>Click the button below to set your password and login.</p>
+          <p style="text-align:center;margin:32px 0;">
+            <a href="{reset_link}" style="background:#111827;color:#fff;text-decoration:none;padding:14px 24px;border-radius:8px;font-weight:600;">Set Password</a>
+          </p>
+          <p style="color:#6b7280;font-size:13px;">Login with email: {user.email}<br/>This link can be used only once.</p>
+        </div>
+        """
+        try:
+            resend.api_key = settings.RESEND_API_KEY
+            resend.Emails.send({
+                "from": settings.DEFAULT_FROM_EMAIL,
+                "to": [user.email],
+                "subject": subject,
+                "html": html,
+            })
+        except Exception:
+            pass
+
         return Response(UserAdminSerializer(user).data, status=status.HTTP_201_CREATED)
 
 

@@ -9,7 +9,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.conf import settings
 from django.utils import timezone
 from .serializers import RegisterSerializer, UserSerializer, LoginSerializer, ForgotPasswordSerializer, ResetPasswordSerializer, ChangePasswordSerializer
-from .models import User, BlacklistedToken
+from .models import User, BlacklistedToken, PasswordSetupToken
 import resend
 
 class RegisterView(APIView):
@@ -142,23 +142,45 @@ class ResetPasswordView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        serializer = ResetPasswordSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        uid = serializer.validated_data['uid']
-        token = serializer.validated_data['token']
-        new_password = serializer.validated_data['new_password']
+        setup_token = request.data.get('setup_token')
+        new_password = request.data.get('new_password')
+        new_password_confirm = request.data.get('new_password_confirm')
 
-        try:
-            uid_decoded = force_str(urlsafe_base64_decode(uid))
-            user = User.objects.get(pk=uid_decoded)
-        except (User.DoesNotExist, ValueError, TypeError):
-            return Response({'message': 'Invalid reset link.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not new_password or not new_password_confirm:
+            return Response({'message': 'new_password and new_password_confirm are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if new_password != new_password_confirm:
+            return Response({'message': 'Passwords do not match.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not default_token_generator.check_token(user, token):
-            return Response({'message': 'Invalid or expired reset link.'}, status=status.HTTP_400_BAD_REQUEST)
+        if setup_token:
+            # One-time setup link flow — no expiration, used once
+            try:
+                setup = PasswordSetupToken.objects.select_related('user').get(token=setup_token, is_used=False)
+            except PasswordSetupToken.DoesNotExist:
+                return Response({'message': 'Invalid or already used setup link.'}, status=status.HTTP_400_BAD_REQUEST)
+            user = setup.user
+        else:
+            # Regular password reset flow (uid + token)
+            serializer = ResetPasswordSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            uid = serializer.validated_data['uid']
+            token = serializer.validated_data['token']
+
+            try:
+                uid_decoded = force_str(urlsafe_base64_decode(uid))
+                user = User.objects.get(pk=uid_decoded)
+            except (User.DoesNotExist, ValueError, TypeError):
+                return Response({'message': 'Invalid reset link.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not default_token_generator.check_token(user, token):
+                return Response({'message': 'Invalid or expired reset link.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
         user.save()
+
+        if setup_token:
+            setup.is_used = True
+            setup.save()
+
         return Response({'message': 'Password has been reset successfully.'}, status=status.HTTP_200_OK)
 
 class ChangePasswordView(APIView):
